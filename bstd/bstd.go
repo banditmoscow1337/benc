@@ -1,11 +1,12 @@
 package bstd
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"unsafe"
 
-	"github.com/deneonet/benc"
+	"github.com/banditmoscow1337/benc"
 	"golang.org/x/exp/constraints"
 )
 
@@ -1290,3 +1291,137 @@ func DecodeZigZag[T constraints.Unsigned](t T) T {
 	}
 	return t >> 1
 }
+
+//
+
+func SkipUInt(n int, b []byte) (int, error) {
+	return SkipUInt64(n, b)
+}
+
+func SizeUInt() int {
+	return SizeUInt64()
+}
+
+func MarshalUInt(n int, b []byte, v uint) int {
+	return MarshalUInt64(n, b, uint64(v))
+}
+
+func UnmarshalUInt(n int, b []byte) (int, uint, error) {
+	nn, r, err := UnmarshalUInt64(n, b)
+	return nn, uint(r), err
+}
+
+//
+
+func SkipInt(n int, b []byte) (int, error) {
+	return SkipInt64(n, b)
+}
+
+func SizeInt() int {
+	return SizeInt64()
+}
+
+func MarshalInt(n int, b []byte, v int) int {
+	return MarshalInt64(n, b, int64(v))
+}
+
+func UnmarshalInt(n int, b []byte) (int, int, error) {
+	nn, r, err := UnmarshalInt64(n, b)
+	return nn, int(r), err
+}
+
+//
+
+func SizeInt8() int {
+	return 2
+}
+
+func MarshalInt8(n int, b []byte, v int8) int {
+	binary.LittleEndian.PutUint16(b[n:], uint16(v))
+	return n + 2
+}
+
+func UnmarshalInt8(n int, b []byte) (int, int8, error) {
+	return n + 2, int8(binary.LittleEndian.Uint16(b[n:])), nil
+}
+
+//
+
+func SizeUInt8() int {
+	return 2
+}
+
+func UnmarshalUInt8(n int, b []byte) (int, uint8, error) {
+	return n + 2, uint8(binary.LittleEndian.Uint16(b[n:])), nil
+}
+
+func MarshalUInt8(n int, b []byte, v uint8) int {
+	binary.LittleEndian.PutUint16(b[n:], uint16(v))
+	return n + 2
+}
+
+//
+
+func SkipComplex64(n int, b []byte) (int, error) {
+	if len(b)-n < 8 {
+		return n, benc.ErrBufTooSmall
+	}
+	return n + 8, nil
+}
+
+func SizeComplex64() int {
+	return 8
+}
+
+func MarshalComplex64(n int, b []byte, v complex64) int {
+	n = MarshalFloat32(n, b, real(v))
+	return MarshalFloat32(n, b, imag(v))
+}
+
+func UnmarshalComplex64(n int, b []byte) (rn int, cpx complex64, err error) {
+	var r, i float32
+	if rn, r, err = UnmarshalFloat32(n, b); err != nil {
+		return
+	}
+	if rn, i, err = UnmarshalFloat32(rn, b); err != nil {
+		return
+	}
+
+	cpx = complex(r, i)
+
+	return
+}
+
+//
+
+func SkipComplex128(n int, b []byte) (int, error) {
+	if len(b)-n < 16 {
+		return n, benc.ErrBufTooSmall
+	}
+	return n + 16, nil
+}
+
+func SizeComplex128() int {
+	return 16
+}
+
+func MarshalComplex128(n int, b []byte, v complex128) int {
+	n = MarshalFloat64(n, b, real(v))
+	return MarshalFloat64(n, b, imag(v))
+}
+
+func UnmarshalComplex128(n int, b []byte) (rn int, cpx complex128, err error) {
+	var r, i float64
+	if rn, r, err = UnmarshalFloat64(n, b); err != nil {
+		return
+	}
+	if rn, i, err = UnmarshalFloat64(rn, b); err != nil {
+		return
+	}
+
+	cpx = complex(r, i)
+
+	return
+}
+
+//

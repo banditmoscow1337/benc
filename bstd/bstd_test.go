@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deneonet/benc"
+	"github.com/banditmoscow1337/benc"
 )
 
 func SizeAll(sizers ...func() int) int {

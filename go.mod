@@ -1,4 +1,4 @@
-module github.com/deneonet/benc
+module github.com/banditmoscow1337/benc
 
 go 1.22
 
