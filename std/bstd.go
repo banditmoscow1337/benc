@@ -4,9 +4,10 @@ import (
 	"encoding/binary"
 	"math"
 	"strconv"
+	"time"
 	"unsafe"
 
-	"github.com/deneonet/benc"
+	"github.com/banditmoscow1337/benc"
 	"golang.org/x/exp/constraints"
 )
 
@@ -873,7 +874,40 @@ func UnmarshalInt16(n int, b []byte) (int, int16, error) {
 	return n + 2, v, nil
 }
 
-// TODO: Int8
+// Returns the new offset 'n' after skipping the marshalled 8-bit integer.
+//
+// Possible errors returned:
+//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
+//
+// If a error is returned, n (the int returned) equals zero ( 0 ).
+func SkipInt8(n int, b []byte) (int, error) {
+	return SkipByte(n, b)
+}
+
+// Returns the bytes needed to marshal a 8-bit integer.
+func SizeInt8() int {
+	return 1
+}
+
+// Returns the new offset 'n' after marshalling the 8-bit integer.
+func MarshalInt8(n int, b []byte, v int8) int {
+	return MarshalByte(n, b, byte(v))
+}
+
+// Returns the new offset 'n', as well as the 8-bit integer, that got unmarshalled.
+//
+// Possible errors returned:
+//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 8-bit integer.
+//
+// If a error is returned, n (the int returned) equals zero ( 0 ).
+func UnmarshalInt8(n int, b []byte) (int, int8, error) {
+	n, bi8, err := UnmarshalByte(n, b)
+	if err != nil {
+		return n, -1, err
+	}
+
+	return n, int8(bi8), err
+}
 
 // Returns the new offset 'n' after skipping the marshalled 64-bit float.
 //
@@ -1025,4 +1059,60 @@ func decodeZigZag[T constraints.Unsigned](t T) T {
 		return ^(t >> 1)
 	}
 	return t >> 1
+}
+
+// Time functions
+func SizeTime() int {
+	return 8 // int64 for UnixNano
+}
+
+func MarshalTime(n int, b []byte, t time.Time) int {
+	return MarshalInt64(n, b, t.UnixNano())
+}
+
+func UnmarshalTime(n int, b []byte) (int, time.Time, error) {
+	n, nano, err := UnmarshalInt64(n, b)
+	if err != nil {
+		return n, time.Time{}, err
+	}
+	return n, time.Unix(0, nano), nil
+}
+
+// Pointer fields by adding a boolean prefix
+func SizePointer[T any](v *T, sizeFn SizeFunc[T]) int {
+	if v != nil {
+		return SizeBool() + sizeFn(*v)
+	}
+	return SizeBool()
+}
+
+func MarshalPointer[T any](n int, b []byte, v *T, marshalFn MarshalFunc[T]) int {
+	n = MarshalBool(n, b, v != nil)
+
+	if v != nil {
+		n = marshalFn(n, b, *v)
+	}
+
+	return n
+}
+
+func UnmarshalPointer[T any](n int, b []byte, unmarshaler interface{}) (int, *T, error) {
+	var t T
+
+	n, hasValue, err := UnmarshalBool(n, b)
+	if err != nil {
+		return n, &t, err
+	}
+
+	if hasValue {
+		switch p := unmarshaler.(type) {
+		case func(n int, b []byte) (int, T, error):
+			n, t, err = p(n, b)
+		case func(n int, b []byte, v *T) (int, error):
+			n, err = p(n, b, &t)
+		}
+
+	}
+
+	return n, &t, err
 }

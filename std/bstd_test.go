@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/deneonet/benc"
+	"github.com/banditmoscow1337/benc"
 )
 
 func SizeAll(sizers ...func() int) (s int) {
@@ -134,6 +134,7 @@ func TestDataTypes(t *testing.T) {
 		rand.Float32(),
 		rand.Float64(),
 		int(math.MaxInt),
+		int8(-1),
 		int16(-1),
 		rand.Int31(),
 		rand.Int63(),
@@ -147,7 +148,7 @@ func TestDataTypes(t *testing.T) {
 		testBs,
 	}
 
-	s := SizeAll(SizeBool, SizeByte, SizeFloat32, SizeFloat64, func() int { return SizeInt(math.MaxInt) }, SizeInt16, SizeInt32, SizeInt64, func() int { return SizeUint(math.MaxUint) }, SizeUint16, SizeUint32, SizeUint64,
+	s := SizeAll(SizeBool, SizeByte, SizeFloat32, SizeFloat64, func() int { return SizeInt(math.MaxInt) }, SizeInt8, SizeInt16, SizeInt32, SizeInt64, func() int { return SizeUint(math.MaxUint) }, SizeUint16, SizeUint32, SizeUint64,
 		sizeTestStr, sizeTestStr, sizeTestBs, sizeTestBs)
 
 	b, err := MarshalAll(s, values,
@@ -156,6 +157,7 @@ func TestDataTypes(t *testing.T) {
 		func(n int, b []byte, v any) int { return MarshalFloat32(n, b, v.(float32)) },
 		func(n int, b []byte, v any) int { return MarshalFloat64(n, b, v.(float64)) },
 		func(n int, b []byte, v any) int { return MarshalInt(n, b, v.(int)) },
+		func(n int, b []byte, v any) int { return MarshalInt8(n, b, v.(int8)) },
 		func(n int, b []byte, v any) int { return MarshalInt16(n, b, v.(int16)) },
 		func(n int, b []byte, v any) int { return MarshalInt32(n, b, v.(int32)) },
 		func(n int, b []byte, v any) int { return MarshalInt64(n, b, v.(int64)) },
@@ -173,7 +175,7 @@ func TestDataTypes(t *testing.T) {
 		t.Fatal(err.Error())
 	}
 
-	if err = SkipAll(b, SkipBool, SkipByte, SkipFloat32, SkipFloat64, SkipVarint, SkipInt16, SkipInt32, SkipInt64, SkipVarint, SkipUint16, SkipUint32, SkipUint64, SkipString, SkipString, SkipBytes, SkipBytes); err != nil {
+	if err = SkipAll(b, SkipBool, SkipByte, SkipFloat32, SkipFloat64, SkipVarint, SkipInt8, SkipInt16, SkipInt32, SkipInt64, SkipVarint, SkipUint16, SkipUint32, SkipUint64, SkipString, SkipString, SkipBytes, SkipBytes); err != nil {
 		t.Fatal(err.Error())
 	}
 
@@ -183,6 +185,7 @@ func TestDataTypes(t *testing.T) {
 		func(n int, b []byte) (int, any, error) { return UnmarshalFloat32(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalFloat64(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt(n, b) },
+		func(n int, b []byte) (int, any, error) { return UnmarshalInt8(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt16(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt32(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt64(n, b) },
@@ -200,13 +203,14 @@ func TestDataTypes(t *testing.T) {
 }
 
 func TestErrBufTooSmall(t *testing.T) {
-	buffers := [][]byte{{}, {}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {1}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {1}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}}
+	buffers := [][]byte{{}, {}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {}, {1}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {1}, {1, 2, 3}, {1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}}
 	if err := UnmarshalAll_VerifyError(benc.ErrBufTooSmall, buffers,
 		func(n int, b []byte) (int, any, error) { return UnmarshalBool(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalByte(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalFloat32(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalFloat64(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt(n, b) },
+		func(n int, b []byte) (int, any, error) { return UnmarshalInt8(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt16(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt32(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalInt64(n, b) },
@@ -252,7 +256,7 @@ func TestErrBufTooSmall(t *testing.T) {
 
 	skipSliceOfBytes := func(n int, b []byte) (int, error) { return SkipSlice(n, b) }
 	skipMapOfBytes := func(n int, b []byte) (int, error) { return SkipMap(n, b) }
-	if err := SkipAll_VerifyError(benc.ErrBufTooSmall, buffers, SkipBool, SkipByte, SkipFloat32, SkipFloat64, SkipVarint, SkipInt16, SkipInt32, SkipInt64, SkipVarint, SkipUint16, SkipUint32, SkipUint64, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipBytes, SkipBytes, SkipBytes, SkipBytes, skipSliceOfBytes, skipSliceOfBytes, skipSliceOfBytes, skipSliceOfBytes, skipMapOfBytes, skipMapOfBytes, skipMapOfBytes, skipMapOfBytes); err != nil {
+	if err := SkipAll_VerifyError(benc.ErrBufTooSmall, buffers, SkipBool, SkipByte, SkipFloat32, SkipFloat64, SkipVarint, SkipInt8, SkipInt16, SkipInt32, SkipInt64, SkipVarint, SkipUint16, SkipUint32, SkipUint64, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipString, SkipBytes, SkipBytes, SkipBytes, SkipBytes, skipSliceOfBytes, skipSliceOfBytes, skipSliceOfBytes, skipSliceOfBytes, skipMapOfBytes, skipMapOfBytes, skipMapOfBytes, skipMapOfBytes); err != nil {
 		t.Fatal(err.Error())
 	}
 }

@@ -5,8 +5,8 @@ retract (
     v1.1.5 // Broken code generation with slices and maps using imported benc schemas
 )
 
-module github.com/deneonet/benc
+module github.com/banditmoscow1337/benc
 
-go 1.22
+go 1.25
 
 require golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa

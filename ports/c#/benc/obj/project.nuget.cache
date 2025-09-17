@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "dgSpecHash": "m9adC5gacPA=",
+  "success": true,
+  "projectFilePath": "/Users/dmitrijavramenko/go/src/github.com/banditmoscow1337/benc/ports/c#/benc/benc.csproj",
+  "expectedPackageFiles": [
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.bcl.asyncinterfaces/6.0.0/microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.netcore.platforms/5.0.0/microsoft.netcore.platforms.5.0.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.testing.extensions.trxreport.abstractions/1.8.2/microsoft.testing.extensions.trxreport.abstractions.1.8.2.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.testing.platform/1.8.2/microsoft.testing.platform.1.8.2.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.testing.platform.msbuild/1.8.2/microsoft.testing.platform.msbuild.1.8.2.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/microsoft.win32.registry/5.0.0/microsoft.win32.registry.5.0.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/system.security.accesscontrol/5.0.0/system.security.accesscontrol.5.0.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/system.security.principal.windows/5.0.0/system.security.principal.windows.5.0.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.analyzers/1.24.0/xunit.analyzers.1.24.0.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3/3.0.1/xunit.v3.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.assert/3.0.1/xunit.v3.assert.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.common/3.0.1/xunit.v3.common.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.core/3.0.1/xunit.v3.core.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.extensibility.core/3.0.1/xunit.v3.extensibility.core.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.runner.common/3.0.1/xunit.v3.runner.common.3.0.1.nupkg.sha512",
+    "/Users/dmitrijavramenko/.nuget/packages/xunit.v3.runner.inproc.console/3.0.1/xunit.v3.runner.inproc.console.3.0.1.nupkg.sha512"
+  ],
+  "logs": []
+}

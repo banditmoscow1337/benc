@@ -4,7 +4,7 @@ The Benc standard provides a suite of methods for raw sizing, skipping, marshall
 
 ## Installation
 ```bash
-go get github.com/deneonet/benc/std
+go get github.com/banditmoscow1337/benc/std
 ```
 
 ## Tests
@@ -12,7 +12,7 @@ Code coverage of `bstd.go` is approximately 95%
 
 ## Usage
 
-Benc Standard provides four primary functions, for all of these types (`string`, `unsafe string`, `slice`, `map`, `bool`, `byte`, `bytes` (slice of type byte), `float32`, `float64`, `int` (var int), `int16`, `int32`, `int64`, `uint` (var uint), `uint16`, `uint32`, `uint64`):
+Benc Standard provides four primary functions, for all of these types (`string`, `unsafe string`, `slice`, `map`, `bool`, `byte`, `bytes` (slice of type byte), `float32`, `float64`, `int` (var int), `int8`, `int16`, `int32`, `int64`, `uint` (var uint), `uint16`, `uint32`, `uint64`):
 
 - **Skip**: Skips the requested type.
 - **Size**: Calculate the needed size for the requested type (and data).
@@ -31,7 +31,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/deneonet/benc/std"
+	"github.com/banditmoscow1337/benc/std"
 )
 
 func main() {
@@ -71,7 +71,7 @@ import (
 	"fmt"
 	"reflect"
 
-	bstd "github.com/deneonet/benc/std"
+	bstd "github.com/banditmoscow1337/benc/std"
 )
 
 func main() {
