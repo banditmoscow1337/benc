@@ -1,35 +1,4 @@
-/*
- NOTE FOR THE DEVELOPER:
-
- The error "no such module 'XCTest'" indicates a project configuration issue.
- The XCTest framework is only available to test targets. Please ensure your
- `Package.swift` file is set up correctly. It should look something like this:
-
- // swift-tools-version: 5.8
- import PackageDescription
-
- let package = Package(
-     name: "Bstd", // Your package name
-     products: [
-         .library(
-             name: "Bstd",
-             targets: ["Bstd"]),
-     ],
-     targets: [
-         .target(
-             name: "Bstd", // Your main library target
-             dependencies: []),
-         .testTarget(
-             name: "BstdTests", // Your test target
-             dependencies: ["Bstd"]), // <-- This links your tests to your library
-     ]
- )
-
- This file, `BstdTests.swift`, must be located inside the `Tests/BstdTests` directory.
-*/
 import XCTest
-// The `@testable` import allows you to access `internal` members of your library from your tests.
-// It should match the name of your library's target, which is likely "Bstd".
 @testable import Bstd 
 
 final class BstdTests: XCTestCase {

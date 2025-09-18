@@ -7,3 +7,5 @@ ports/c++/.DS_Store
 cmd/generator
 test
 ports/python/__pycache__
+.scala-build
+.metals
