@@ -1,0 +1,9 @@
+ports/c#/benc/obj/project.assets.json
+ports/.DS_Store
+ports/rust/.DS_Store
+ports/c++/.DS_Store
+.DS_Store
+.vscode/
+cmd/generator
+test
+ports/python/__pycache__

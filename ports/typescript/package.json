@@ -1,0 +1,19 @@
+{
+  "name": "benc",
+  "version": "1.0.0",
+  "main": "std.js",
+  "scripts": {
+    "test": "npx jest"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.5.1"
+  },
+  "dependencies": {
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.2"
+  }
+}
