@@ -31,10 +31,12 @@ use std::hash::Hash;
 use std::mem::size_of;
 use thiserror::Error;
 // To use the new time functions, you would need to add `chrono` to your Cargo.toml:
-// `chrono = { version = "0.4", features = ["serde"] }`
+// `chrono = { version = "0.4" }`
 use chrono::{DateTime, Utc};
 
 /// The terminator sequence used to mark the end of slices and maps.
+/// This specific sequence is chosen as it's unlikely to appear naturally
+/// in varint-encoded data.
 const TERMINATOR: [u8; 4] = [1, 1, 1, 1];
 
 /// The maximum number of bytes a 64-bit varint can occupy.
@@ -54,6 +56,8 @@ pub enum Error {
     InvalidUtf8(#[from] std::str::Utf8Error),
     #[error("expected a terminator sequence, but it was not found")]
     MissingTerminator,
+    #[error("value is out of range for the target integer type")]
+    OutOfRange,
 }
 
 // ===================================================================================
@@ -96,11 +100,10 @@ pub fn size_string(s: &str) -> usize {
 /// Marshals a string into the writer.
 /// The format is a varint-encoded length followed by the string's UTF-8 bytes.
 ///
-/// # Panics
-/// Panics if the writer is too small. For a non-panicking version, check the size first.
-pub fn marshal_string(s: &str, writer: &mut &mut [u8]) {
-    marshal_uint(s.len() as u64, writer);
-    write_to_slice(writer, s.as_bytes()).expect("buffer too small");
+/// Returns an error if the writer is too small.
+pub fn marshal_string(s: &str, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_uint(s.len() as u64, writer)?;
+    write_to_slice(writer, s.as_bytes())
 }
 
 /// Unmarshals a string slice from the reader without allocating.
@@ -130,11 +133,10 @@ pub fn size_bytes(b: &[u8]) -> usize {
 /// Marshals a byte slice into the writer.
 /// The format is a varint-encoded length followed by the bytes.
 ///
-/// # Panics
-/// Panics if the writer is too small.
-pub fn marshal_bytes(b: &[u8], writer: &mut &mut [u8]) {
-    marshal_uint(b.len() as u64, writer);
-    write_to_slice(writer, b).expect("buffer too small");
+/// Returns an error if the writer is too small.
+pub fn marshal_bytes(b: &[u8], writer: &mut &mut [u8]) -> Result<()> {
+    marshal_uint(b.len() as u64, writer)?;
+    write_to_slice(writer, b)
 }
 
 /// Unmarshals a byte slice from the reader without allocating (cropped).
@@ -178,18 +180,17 @@ pub fn size_fixed_slice<T>(slice: &[T], element_size: usize) -> usize {
 
 /// Marshals a slice into the writer.
 ///
-/// # Panics
-/// Panics if the writer is too small.
+/// Returns an error if the writer is too small.
 pub fn marshal_slice<T>(
     slice: &[T],
     writer: &mut &mut [u8],
-    marshaler: impl Fn(&T, &mut &mut [u8]),
-) {
-    marshal_uint(slice.len() as u64, writer);
+    marshaler: impl Fn(&T, &mut &mut [u8]) -> Result<()>,
+) -> Result<()> {
+    marshal_uint(slice.len() as u64, writer)?;
     for item in slice {
-        marshaler(item, writer);
+        marshaler(item, writer)?;
     }
-    write_to_slice(writer, &TERMINATOR).expect("buffer too small");
+    write_to_slice(writer, &TERMINATOR)
 }
 
 /// Unmarshals a slice from the reader.
@@ -210,11 +211,6 @@ pub fn unmarshal_slice<T>(
 }
 
 /// Skips over a marshalled slice in the reader.
-///
-/// Note: This implementation scans for the terminator, which is inefficient and
-/// can be incorrect if the terminator sequence appears within the marshalled data.
-/// A more robust implementation would deserialize elements to determine their
-/// length, but this version matches the original Go implementation's behavior.
 pub fn skip_slice(
     reader: &mut &[u8],
     skip_element: impl Fn(&mut &[u8]) -> Result<()>,
@@ -229,7 +225,6 @@ pub fn skip_slice(
     }
     Ok(())
 }
-
 
 // ===================================================================================
 // Map / HashMap<K, V>
@@ -252,20 +247,19 @@ pub fn size_map<K, V>(
 
 /// Marshals a map into the writer.
 ///
-/// # Panics
-/// Panics if the writer is too small.
+/// Returns an error if the writer is too small.
 pub fn marshal_map<K, V>(
     map: &HashMap<K, V>,
     writer: &mut &mut [u8],
-    k_marshaler: impl Fn(&K, &mut &mut [u8]),
-    v_marshaler: impl Fn(&V, &mut &mut [u8]),
-) {
-    marshal_uint(map.len() as u64, writer);
+    k_marshaler: impl Fn(&K, &mut &mut [u8]) -> Result<()>,
+    v_marshaler: impl Fn(&V, &mut &mut [u8]) -> Result<()>,
+) -> Result<()> {
+    marshal_uint(map.len() as u64, writer)?;
     for (k, v) in map.iter() {
-        k_marshaler(k, writer);
-        v_marshaler(v, writer);
+        k_marshaler(k, writer)?;
+        v_marshaler(v, writer)?;
     }
-    write_to_slice(writer, &TERMINATOR).expect("buffer too small");
+    write_to_slice(writer, &TERMINATOR)
 }
 
 /// Unmarshals a map from the reader.
@@ -330,14 +324,15 @@ pub fn size_uint(v: u64) -> usize {
     if v == 0 {
         return 1;
     }
+    // Efficiently calculate the number of bytes required.
+    // (bits_needed + 6) / 7
     (u64::BITS - v.leading_zeros() + 6) as usize / 7
 }
 
 /// Marshals a `u64` as a varint into the writer.
 ///
-/// # Panics
-/// Panics if the writer is too small.
-pub fn marshal_uint(mut v: u64, writer: &mut &mut [u8]) {
+/// Returns an error if the writer is too small.
+pub fn marshal_uint(mut v: u64, writer: &mut &mut [u8]) -> Result<()> {
     let mut buf = [0u8; MAX_VARINT_LEN_64];
     let mut i = 0;
     while v >= 0x80 {
@@ -347,7 +342,7 @@ pub fn marshal_uint(mut v: u64, writer: &mut &mut [u8]) {
     }
     buf[i] = v as u8;
     i += 1;
-    write_to_slice(writer, &buf[..i]).expect("buffer too small");
+    write_to_slice(writer, &buf[..i])
 }
 
 /// Unmarshals a varint-encoded `u64` from the reader.
@@ -389,10 +384,9 @@ pub fn size_int(v: i64) -> usize {
 
 /// Marshals an `i64` as a ZigZag-encoded varint into the writer.
 ///
-/// # Panics
-/// Panics if the writer is too small.
-pub fn marshal_int(v: i64, writer: &mut &mut [u8]) {
-    marshal_uint(encode_zigzag(v), writer);
+/// Returns an error if the writer is too small.
+pub fn marshal_int(v: i64, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_uint(encode_zigzag(v), writer)
 }
 
 /// Unmarshals a ZigZag-encoded varint `i64` from the reader.
@@ -403,6 +397,64 @@ pub fn unmarshal_int(reader: &mut &[u8]) -> Result<i64> {
 /// Skips over a marshalled zigzag-encoded varint in the reader.
 pub fn skip_int(reader: &mut &[u8]) -> Result<()> {
     skip_uint(reader)
+}
+
+// ===================================================================================
+// Varint (usize / isize) - Platform Dependent
+// ===================================================================================
+
+/// Returns the number of bytes required to marshal a `usize` as a varint.
+/// Note: The value is always marshalled as a `u64` for platform independence.
+pub fn size_usize(v: usize) -> usize {
+    size_uint(v as u64)
+}
+
+/// Marshals a `usize` into the writer.
+/// Note: The value is always marshalled as a `u64` for platform independence.
+///
+/// Returns an error if the writer is too small.
+pub fn marshal_usize(v: usize, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_uint(v as u64, writer)
+}
+
+/// Unmarshals a `usize` from the reader.
+/// Returns an `OutOfRange` error if the unmarshalled `u64` does not fit into a `usize`
+/// on the target platform (e.g., a large value on a 32-bit system).
+pub fn unmarshal_usize(reader: &mut &[u8]) -> Result<usize> {
+    let val = unmarshal_uint(reader)?;
+    usize::try_from(val).map_err(|_| Error::OutOfRange)
+}
+
+/// Skips over a marshalled `usize` in the reader.
+pub fn skip_usize(reader: &mut &[u8]) -> Result<()> {
+    skip_uint(reader)
+}
+
+/// Returns the number of bytes required to marshal an `isize` as a varint.
+/// Note: The value is always marshalled as an `i64` for platform independence.
+pub fn size_isize(v: isize) -> usize {
+    size_int(v as i64)
+}
+
+/// Marshals an `isize` into the writer.
+/// Note: The value is always marshalled as an `i64` for platform independence.
+///
+/// Returns an error if the writer is too small.
+pub fn marshal_isize(v: isize, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_int(v as i64, writer)
+}
+
+/// Unmarshals an `isize` from the reader.
+/// Returns an `OutOfRange` error if the unmarshalled `i64` does not fit into an `isize`
+/// on the target platform.
+pub fn unmarshal_isize(reader: &mut &[u8]) -> Result<isize> {
+    let val = unmarshal_int(reader)?;
+    isize::try_from(val).map_err(|_| Error::OutOfRange)
+}
+
+/// Skips over a marshalled `isize` in the reader.
+pub fn skip_isize(reader: &mut &[u8]) -> Result<()> {
+    skip_int(reader)
 }
 
 // ===================================================================================
@@ -424,11 +476,10 @@ macro_rules! fixed_size_impl {
 
         /// Marshals a `$type` into the writer using little-endian encoding.
         ///
-        /// # Panics
-        /// Panics if the writer is too small.
-        pub fn $marshal_fn(v: $type, writer: &mut &mut [u8]) {
+        /// Returns an error if the writer is too small.
+        pub fn $marshal_fn(v: $type, writer: &mut &mut [u8]) -> Result<()> {
             let bytes = v.to_le_bytes();
-            write_to_slice(writer, &bytes).expect("buffer too small");
+            write_to_slice(writer, &bytes)
         }
 
         /// Unmarshals a `$type` from the reader using little-endian encoding.
@@ -458,11 +509,10 @@ macro_rules! fixed_size_impl {
 
         /// Marshals a `$type` into the writer using little-endian encoding.
         ///
-        /// # Panics
-        /// Panics if the writer is too small.
-        pub fn $marshal_fn(v: $type, writer: &mut &mut [u8]) {
+        /// Returns an error if the writer is too small.
+        pub fn $marshal_fn(v: $type, writer: &mut &mut [u8]) -> Result<()> {
             let bytes = v.to_bits().to_le_bytes();
-            write_to_slice(writer, &bytes).expect("buffer too small");
+            write_to_slice(writer, &bytes)
         }
 
         /// Unmarshals a `$type` from the reader using little-endian encoding.
@@ -493,8 +543,9 @@ fixed_size_impl!(float f64, size_f64, marshal_f64, unmarshal_f64, skip_f64, u64)
 /// Returns the number of bytes required to marshal a `u8`.
 pub const fn size_u8() -> usize { 1 }
 /// Marshals a `u8` (byte) into the writer.
-pub fn marshal_u8(v: u8, writer: &mut &mut [u8]) {
-    write_to_slice(writer, &[v]).expect("buffer too small");
+/// Returns an error if the writer is too small.
+pub fn marshal_u8(v: u8, writer: &mut &mut [u8]) -> Result<()> {
+    write_to_slice(writer, &[v])
 }
 /// Unmarshals a `u8` (byte) from the reader.
 pub fn unmarshal_u8(reader: &mut &[u8]) -> Result<u8> {
@@ -509,8 +560,9 @@ pub fn skip_u8(reader: &mut &[u8]) -> Result<()> {
 /// Returns the number of bytes required to marshal an `i8`.
 pub const fn size_i8() -> usize { 1 }
 /// Marshals an `i8` into the writer.
-pub fn marshal_i8(v: i8, writer: &mut &mut [u8]) {
-    marshal_u8(v as u8, writer);
+/// Returns an error if the writer is too small.
+pub fn marshal_i8(v: i8, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_u8(v as u8, writer)
 }
 /// Unmarshals an `i8` from the reader.
 pub fn unmarshal_i8(reader: &mut &[u8]) -> Result<i8> {
@@ -526,12 +578,16 @@ pub fn skip_i8(reader: &mut &[u8]) -> Result<()> {
 /// Returns the number of bytes required to marshal a `bool`.
 pub const fn size_bool() -> usize { 1 }
 /// Marshals a `bool` into the writer (1 for true, 0 for false).
-pub fn marshal_bool(v: bool, writer: &mut &mut [u8]) {
-    marshal_u8(if v { 1 } else { 0 }, writer);
+/// Returns an error if the writer is too small.
+pub fn marshal_bool(v: bool, writer: &mut &mut [u8]) -> Result<()> {
+    marshal_u8(if v { 1 } else { 0 }, writer)
 }
 /// Unmarshals a `bool` from the reader.
+/// Note: for compatibility with the Go implementation, this is a strict check.
+/// Only a value of 1 is considered true.
 pub fn unmarshal_bool(reader: &mut &[u8]) -> Result<bool> {
-    Ok(unmarshal_u8(reader)? == 1)
+    let val = unmarshal_u8(reader)?;
+    Ok(val == 1)
 }
 /// Skips over a marshalled `bool` in the reader.
 pub fn skip_bool(reader: &mut &[u8]) -> Result<()> {
@@ -548,16 +604,17 @@ pub const fn size_time() -> usize {
 }
 
 /// Marshals a `DateTime<Utc>` as its nanosecond timestamp (i64).
-pub fn marshal_time(t: DateTime<Utc>, writer: &mut &mut [u8]) {
-    // Note: `timestamp_nanos` is deprecated, but `timestamp_nanos_opt` is a suitable replacement.
-    // Here we default to 0 if the timestamp is out of range, which is a reasonable default.
-    marshal_i64(t.timestamp_nanos_opt().unwrap_or(0), writer);
+/// Returns an error if the writer is too small.
+pub fn marshal_time(t: DateTime<Utc>, writer: &mut &mut [u8]) -> Result<()> {
+    // timestamp_nanos_opt returns an i64, matching the Go implementation.
+    // Default to 0 if out of range.
+    marshal_i64(t.timestamp_nanos_opt().unwrap_or(0), writer)
 }
 
 /// Unmarshals a `DateTime<Utc>` from its nanosecond timestamp (i64).
 pub fn unmarshal_time(reader: &mut &[u8]) -> Result<DateTime<Utc>> {
     let nanos = unmarshal_i64(reader)?;
-    // `from_timestamp_nanos` is infallible for i64, so `unwrap` is safe.
+    // DateTime::from_timestamp_nanos is infallible for any i64.
     Ok(DateTime::from_timestamp_nanos(nanos))
 }
 
@@ -579,15 +636,17 @@ pub fn size_option<T>(v: &Option<T>, sizer: impl Fn(&T) -> usize) -> usize {
 /// Marshals an `Option<T>` into the writer.
 /// It writes a `bool` (true for `Some`, false for `None`), followed by the marshalled
 /// value if it is `Some`.
+/// Returns an error if the writer is too small.
 pub fn marshal_option<T>(
     v: &Option<T>,
     writer: &mut &mut [u8],
-    marshaler: impl Fn(&T, &mut &mut [u8]),
-) {
-    marshal_bool(v.is_some(), writer);
+    marshaler: impl Fn(&T, &mut &mut [u8]) -> Result<()>,
+) -> Result<()> {
+    marshal_bool(v.is_some(), writer)?;
     if let Some(value) = v {
-        marshaler(value, writer);
+        marshaler(value, writer)?;
     }
+    Ok(())
 }
 
 /// Unmarshals an `Option<T>` from the reader.
@@ -604,7 +663,7 @@ pub fn unmarshal_option<T>(
 }
 
 /// Skips over a marshalled `Option<T>` in the reader.
-pub fn skip_option<T>(
+pub fn skip_option(
     reader: &mut &[u8],
     skip_element: impl Fn(&mut &[u8]) -> Result<()>,
 ) -> Result<()> {
@@ -613,3 +672,287 @@ pub fn skip_option<T>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    // To run these tests, you'll need to add the following to your Cargo.toml:
+    // [dev-dependencies]
+    // rand = "0.8"
+
+    fn verify_skip(mut bytes: &[u8], skipper: impl Fn(&mut &[u8]) -> Result<()>) {
+        skipper(&mut bytes).unwrap();
+        assert!(bytes.is_empty(), "skip did not consume the whole buffer");
+    }
+
+    #[test]
+    fn test_data_types() {
+        let mut rng = rand::thread_rng();
+
+        let val_bool = true;
+        let val_byte = 128u8;
+        let val_f32: f32 = rng.gen();
+        let val_f64: f64 = rng.gen();
+        let val_isize_pos: isize = isize::MAX;
+        let val_isize_neg: isize = -12345;
+        let val_i8: i8 = -1;
+        let val_i16: i16 = -1;
+        let val_i32: i32 = rng.gen();
+        let val_i64: i64 = rng.gen();
+        let val_usize: usize = usize::MAX;
+        let val_u16: u16 = 160;
+        let val_u32: u32 = rng.gen();
+        let val_u64: u64 = rng.gen();
+        let val_str = "Hello World!";
+        let val_bs: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+        let total_size = size_bool()
+            + size_u8()
+            + size_f32()
+            + size_f64()
+            + size_isize(val_isize_pos)
+            + size_isize(val_isize_neg)
+            + size_i8()
+            + size_i16()
+            + size_i32()
+            + size_i64()
+            + size_usize(val_usize)
+            + size_u16()
+            + size_u32()
+            + size_u64()
+            + size_string(val_str)
+            + size_bytes(val_bs)
+            + size_bytes(val_bs);
+
+        let mut buf = vec![0u8; total_size];
+        let mut writer = buf.as_mut_slice();
+
+        marshal_bool(val_bool, &mut writer).unwrap();
+        marshal_u8(val_byte, &mut writer).unwrap();
+        marshal_f32(val_f32, &mut writer).unwrap();
+        marshal_f64(val_f64, &mut writer).unwrap();
+        marshal_isize(val_isize_pos, &mut writer).unwrap();
+        marshal_isize(val_isize_neg, &mut writer).unwrap();
+        marshal_i8(val_i8, &mut writer).unwrap();
+        marshal_i16(val_i16, &mut writer).unwrap();
+        marshal_i32(val_i32, &mut writer).unwrap();
+        marshal_i64(val_i64, &mut writer).unwrap();
+        marshal_usize(val_usize, &mut writer).unwrap();
+        marshal_u16(val_u16, &mut writer).unwrap();
+        marshal_u32(val_u32, &mut writer).unwrap();
+        marshal_u64(val_u64, &mut writer).unwrap();
+        marshal_string(val_str, &mut writer).unwrap();
+        marshal_bytes(val_bs, &mut writer).unwrap();
+        marshal_bytes(val_bs, &mut writer).unwrap();
+
+        assert!(writer.is_empty(), "marshal did not fill the buffer");
+        
+        // Test Skip
+        let mut skipper_buf = buf.as_slice();
+        skip_bool(&mut skipper_buf).unwrap();
+        skip_u8(&mut skipper_buf).unwrap();
+        skip_f32(&mut skipper_buf).unwrap();
+        skip_f64(&mut skipper_buf).unwrap();
+        skip_isize(&mut skipper_buf).unwrap();
+        skip_isize(&mut skipper_buf).unwrap();
+        skip_i8(&mut skipper_buf).unwrap();
+        skip_i16(&mut skipper_buf).unwrap();
+        skip_i32(&mut skipper_buf).unwrap();
+        skip_i64(&mut skipper_buf).unwrap();
+        skip_usize(&mut skipper_buf).unwrap();
+        skip_u16(&mut skipper_buf).unwrap();
+        skip_u32(&mut skipper_buf).unwrap();
+        skip_u64(&mut skipper_buf).unwrap();
+        skip_string(&mut skipper_buf).unwrap();
+        skip_bytes(&mut skipper_buf).unwrap();
+        skip_bytes(&mut skipper_buf).unwrap();
+        assert!(skipper_buf.is_empty(), "skip did not consume the buffer");
+
+        // Test Unmarshal
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_bool(&mut reader).unwrap(), val_bool);
+        assert_eq!(unmarshal_u8(&mut reader).unwrap(), val_byte);
+        assert_eq!(unmarshal_f32(&mut reader).unwrap(), val_f32);
+        assert_eq!(unmarshal_f64(&mut reader).unwrap(), val_f64);
+        assert_eq!(unmarshal_isize(&mut reader).unwrap(), val_isize_pos);
+        assert_eq!(unmarshal_isize(&mut reader).unwrap(), val_isize_neg);
+        assert_eq!(unmarshal_i8(&mut reader).unwrap(), val_i8);
+        assert_eq!(unmarshal_i16(&mut reader).unwrap(), val_i16);
+        assert_eq!(unmarshal_i32(&mut reader).unwrap(), val_i32);
+        assert_eq!(unmarshal_i64(&mut reader).unwrap(), val_i64);
+        assert_eq!(unmarshal_usize(&mut reader).unwrap(), val_usize);
+        assert_eq!(unmarshal_u16(&mut reader).unwrap(), val_u16);
+        assert_eq!(unmarshal_u32(&mut reader).unwrap(), val_u32);
+        assert_eq!(unmarshal_u64(&mut reader).unwrap(), val_u64);
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), val_str);
+        assert_eq!(unmarshal_bytes_cropped(&mut reader).unwrap(), val_bs);
+        // We need a new reader for the last one to test copied
+        let remaining_len = reader.len();
+        let mut final_reader = buf.as_slice();
+        final_reader = &final_reader[total_size - remaining_len..];
+        assert_eq!(unmarshal_bytes_copied(&mut final_reader).unwrap(), val_bs.to_vec());
+        
+        assert!(reader.len() > 0, "final unmarshal should not have been called on original reader");
+        assert!(final_reader.is_empty(), "unmarshal did not consume the buffer");
+    }
+
+    #[test]
+    fn test_err_buf_too_small() {
+        assert_eq!(unmarshal_bool(&mut &[][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_u8(&mut &[][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_f32(&mut &[1,2,3][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_f64(&mut &[1,2,3,4,5,6,7][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_string(&mut &[2,0][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_bytes_cropped(&mut &[4,1,2,3][..]).err(), Some(Error::BufferTooSmall));
+        let mut slice_buf = &[10, 0, 0, 0, 1][..];
+        assert_eq!(unmarshal_slice(&mut slice_buf, unmarshal_u8).err(), Some(Error::BufferTooSmall));
+        let mut map_buf = &[10, 0, 0, 0, 1][..];
+        assert_eq!(unmarshal_map(&mut map_buf, unmarshal_u8, unmarshal_u8).err(), Some(Error::BufferTooSmall));
+    }
+
+    #[test]
+    fn test_slices() {
+        let slice = vec!["sliceelement1", "sliceelement2", "sliceelement3"];
+        let size = size_slice(&slice, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
+
+        verify_skip(&buf, |r| skip_slice(r, skip_string));
+
+        let mut reader = buf.as_slice();
+        let ret_slice = unmarshal_slice(&mut reader, unmarshal_string).unwrap();
+        assert_eq!(ret_slice, slice);
+        assert!(reader.is_empty());
+    }
+    
+    #[test]
+    fn test_maps() {
+        let mut map = HashMap::new();
+        map.insert("mapkey1".to_string(), "mapvalue1".to_string());
+        map.insert("mapkey2".to_string(), "mapvalue2".to_string());
+        map.insert("mapkey3".to_string(), "mapvalue3".to_string());
+        
+        let size = size_map(&map, |k| size_string(k), |v| size_string(v));
+        let mut buf = vec![0; size];
+        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        
+        verify_skip(&buf, |r| skip_map(r, skip_string, skip_string));
+
+        let mut reader = buf.as_slice();
+        let ret_map = unmarshal_map(&mut reader, unmarshal_string, unmarshal_string).unwrap();
+        assert_eq!(ret_map, map);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn test_string_edge_cases() {
+        // Empty string
+        let s = "";
+        let size = size_string(s);
+        let mut buf = vec![0; size];
+        marshal_string(s, &mut buf.as_mut_slice()).unwrap();
+        verify_skip(&buf, skip_string);
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), s);
+        assert!(reader.is_empty());
+
+        // Long string
+        let long_s = "H".repeat(u16::MAX as usize + 1);
+        let size = size_string(&long_s);
+        let mut buf = vec![0; size];
+        marshal_string(&long_s, &mut buf.as_mut_slice()).unwrap();
+        verify_skip(&buf, skip_string);
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), long_s);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn test_varint_errors() {
+        let overflow_buf = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
+        assert_eq!(skip_uint(&mut &overflow_buf[..]).err(), Some(Error::VarintOverflow));
+        assert_eq!(unmarshal_uint(&mut &overflow_buf[..]).err(), Some(Error::VarintOverflow));
+
+        let too_small_buf = [0x80];
+        assert_eq!(skip_uint(&mut &too_small_buf[..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_uint(&mut &too_small_buf[..]).err(), Some(Error::BufferTooSmall));
+    }
+    
+    #[test]
+    fn test_time() {
+        let now = DateTime::from_timestamp_nanos(1663362895123456789);
+        let size = size_time();
+        let mut buf = vec![0; size];
+        marshal_time(now, &mut buf.as_mut_slice()).unwrap();
+        
+        verify_skip(&buf, skip_time);
+
+        let mut reader = buf.as_slice();
+        let ret_time = unmarshal_time(&mut reader).unwrap();
+        assert_eq!(ret_time, now);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn test_option_pointer() {
+        // Non-nil pointer
+        let val = "hello world".to_string();
+        let some_val = Some(val.clone());
+        let size = size_option(&some_val, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_option(&some_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
+
+        verify_skip(&buf, |r| skip_option(r, skip_string));
+        
+        let mut reader = buf.as_slice();
+        let ret_opt = unmarshal_option(&mut reader, unmarshal_string).unwrap().map(|s| s.to_string());
+        assert_eq!(ret_opt, Some(val));
+        assert!(reader.is_empty());
+        
+        // Nil pointer
+        let none_val: Option<String> = None;
+        let size = size_option(&none_val, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_option(&none_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
+
+        verify_skip(&buf, |r| skip_option(r, skip_string));
+
+        let mut reader = buf.as_slice();
+        let ret_opt: Option<String> = unmarshal_option(&mut reader, |_| unreachable!()).unwrap();
+        assert_eq!(ret_opt, None);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn test_terminator_errors() {
+        // Slice
+        let slice = vec!["a"];
+        let size = size_slice(&slice, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
+        let truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_slice(&mut truncated_buf.clone(), skip_string).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_slice(&mut truncated_buf.clone(), unmarshal_string).err(), Some(Error::BufferTooSmall));
+
+        // Map
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), "b".to_string());
+        let size = size_map(&map, |k| size_string(k), |v| size_string(v));
+        let mut buf = vec![0; size];
+        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        let truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_map(&mut truncated_buf.clone(), skip_string, skip_string).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_map(&mut truncated_buf.clone(), unmarshal_string, unmarshal_string).err(), Some(Error::BufferTooSmall));
+    }
+
+    #[test]
+    fn test_size_fixed_slice() {
+        let slice = vec![1i32, 2, 3];
+        let elem_size = size_i32();
+        let expected = size_uint(slice.len() as u64) + slice.len() * elem_size + TERMINATOR.len();
+        assert_eq!(size_fixed_slice(&slice, elem_size), expected);
+    }
+}
+

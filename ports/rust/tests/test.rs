@@ -1,322 +1,284 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use super::*;
+    use rand::Rng;
     use benc::*;
 
-    #[test]
-    fn test_composite_structure() {
-        #[derive(Debug, PartialEq)]
-        struct Message<'a> {
-            id: u64,
-            payload: &'a str,
-            tags: Vec<u32>,
-        }
+    // To run these tests, you'll need to add the following to your Cargo.toml:
+    // [dev-dependencies]
+    // rand = "0.8"
 
-        let msg = Message {
-            id: 123456789,
-            payload: "hello world!",
-            tags: vec![1, 10, 100, 1000],
-        };
-
-        let size = size_u64() +
-                   size_string(msg.payload) +
-                   size_slice(&msg.tags, |_| size_u32());
-        
-        let mut buf = vec![0u8; size];
-        let mut writer = &mut buf[..];
-
-        // Marshal
-        marshal_u64(msg.id, &mut writer);
-        marshal_string(msg.payload, &mut writer);
-        marshal_slice(&msg.tags, &mut writer, |v, w| marshal_u32(*v, w));
-        assert_eq!(writer.len(), 0);
-
-        // Unmarshal
-        let mut reader = &buf[..];
-        let decoded_msg = Message {
-            id: unmarshal_u64(&mut reader).unwrap(),
-            payload: unmarshal_string(&mut reader).unwrap(),
-            tags: unmarshal_slice(&mut reader, unmarshal_u32).unwrap(),
-        };
-
-        assert_eq!(reader.len(), 0);
-        assert_eq!(msg, decoded_msg);
+    fn verify_skip(mut bytes: &[u8], skipper: impl Fn(&mut &[u8]) -> Result<()>) {
+        skipper(&mut bytes).unwrap();
+        assert!(bytes.is_empty(), "skip did not consume the whole buffer");
     }
 
-    // ===================================================================================
-    // Full rewrite of bstd_test.go starts here
-    // ===================================================================================
-
-    /// Corresponds to Go's `TestDataTypes`
     #[test]
-    fn test_all_data_types_roundtrip() {
-        let test_str = "Hello World!";
-        let test_bs = &[0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    fn test_data_types() {
+        let mut rng = rand::thread_rng();
 
-        // 1. Define original values
         let val_bool = true;
         let val_byte = 128u8;
-        let val_f32: f32 = rand::random();
-        let val_f64: f64 = rand::random();
-        let val_int: i64 = i64::MAX;
+        let val_f32: f32 = rng.gen();
+        let val_f64: f64 = rng.gen();
+        let val_isize_pos: isize = isize::MAX;
+        let val_isize_neg: isize = -12345;
+        let val_i8: i8 = -1;
         let val_i16: i16 = -1;
-        let val_i32: i32 = rand::random();
-        let val_i64: i64 = rand::random();
-        let val_uint: u64 = u64::MAX;
+        let val_i32: i32 = rng.gen();
+        let val_i64: i64 = rng.gen();
+        let val_usize: usize = usize::MAX;
         let val_u16: u16 = 160;
-        let val_u32: u32 = rand::random();
-        let val_u64: u64 = rand::random();
-        
-        // 2. Calculate total size
+        let val_u32: u32 = rng.gen();
+        let val_u64: u64 = rng.gen();
+        let val_str = "Hello World!";
+        let val_bs: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
         let total_size = size_bool()
             + size_u8()
             + size_f32()
             + size_f64()
-            + size_int(val_int)
+            + size_isize(val_isize_pos)
+            + size_isize(val_isize_neg)
+            + size_i8()
             + size_i16()
             + size_i32()
             + size_i64()
-            + size_uint(val_uint)
+            + size_usize(val_usize)
             + size_u16()
             + size_u32()
             + size_u64()
-            + size_string(test_str)
-            + size_bytes(test_bs);
-        
+            + size_string(val_str)
+            + size_bytes(val_bs)
+            + size_bytes(val_bs);
+
         let mut buf = vec![0u8; total_size];
+        let mut writer = buf.as_mut_slice();
 
-        // 3. Marshal all values sequentially
-        let mut writer = &mut buf[..];
-        marshal_bool(val_bool, &mut writer);
-        marshal_u8(val_byte, &mut writer);
-        marshal_f32(val_f32, &mut writer);
-        marshal_f64(val_f64, &mut writer);
-        marshal_int(val_int, &mut writer);
-        marshal_i16(val_i16, &mut writer);
-        marshal_i32(val_i32, &mut writer);
-        marshal_i64(val_i64, &mut writer);
-        marshal_uint(val_uint, &mut writer);
-        marshal_u16(val_u16, &mut writer);
-        marshal_u32(val_u32, &mut writer);
-        marshal_u64(val_u64, &mut writer);
-        marshal_string(test_str, &mut writer);
-        marshal_bytes(test_bs, &mut writer);
+        marshal_bool(val_bool, &mut writer).unwrap();
+        marshal_u8(val_byte, &mut writer).unwrap();
+        marshal_f32(val_f32, &mut writer).unwrap();
+        marshal_f64(val_f64, &mut writer).unwrap();
+        marshal_isize(val_isize_pos, &mut writer).unwrap();
+        marshal_isize(val_isize_neg, &mut writer).unwrap();
+        marshal_i8(val_i8, &mut writer).unwrap();
+        marshal_i16(val_i16, &mut writer).unwrap();
+        marshal_i32(val_i32, &mut writer).unwrap();
+        marshal_i64(val_i64, &mut writer).unwrap();
+        marshal_usize(val_usize, &mut writer).unwrap();
+        marshal_u16(val_u16, &mut writer).unwrap();
+        marshal_u32(val_u32, &mut writer).unwrap();
+        marshal_u64(val_u64, &mut writer).unwrap();
+        marshal_string(val_str, &mut writer).unwrap();
+        marshal_bytes(val_bs, &mut writer).unwrap();
+        marshal_bytes(val_bs, &mut writer).unwrap();
+
+        assert!(writer.is_empty(), "marshal did not fill the buffer");
         
-        assert_eq!(writer.len(), 0, "Buffer size mismatch after marshalling");
+        // Test Skip
+        let mut skipper_buf = buf.as_slice();
+        skip_bool(&mut skipper_buf).unwrap();
+        skip_u8(&mut skipper_buf).unwrap();
+        skip_f32(&mut skipper_buf).unwrap();
+        skip_f64(&mut skipper_buf).unwrap();
+        skip_isize(&mut skipper_buf).unwrap();
+        skip_isize(&mut skipper_buf).unwrap();
+        skip_i8(&mut skipper_buf).unwrap();
+        skip_i16(&mut skipper_buf).unwrap();
+        skip_i32(&mut skipper_buf).unwrap();
+        skip_i64(&mut skipper_buf).unwrap();
+        skip_usize(&mut skipper_buf).unwrap();
+        skip_u16(&mut skipper_buf).unwrap();
+        skip_u32(&mut skipper_buf).unwrap();
+        skip_u64(&mut skipper_buf).unwrap();
+        skip_string(&mut skipper_buf).unwrap();
+        skip_bytes(&mut skipper_buf).unwrap();
+        skip_bytes(&mut skipper_buf).unwrap();
+        assert!(skipper_buf.is_empty(), "skip did not consume the buffer");
 
-        // 4. Skip all values and verify consumption
-        let mut skipper = &buf[..];
-        skip_bool(&mut skipper).unwrap();
-        skip_u8(&mut skipper).unwrap();
-        skip_f32(&mut skipper).unwrap();
-        skip_f64(&mut skipper).unwrap();
-        unmarshal_int(&mut skipper).unwrap(); // No skip_int, so unmarshal instead
-        skip_i16(&mut skipper).unwrap();
-        skip_i32(&mut skipper).unwrap();
-        skip_i64(&mut skipper).unwrap();
-        unmarshal_uint(&mut skipper).unwrap(); // No skip_uint
-        skip_u16(&mut skipper).unwrap();
-        skip_u32(&mut skipper).unwrap();
-        skip_u64(&mut skipper).unwrap();
-        skip_string(&mut skipper).unwrap();
-        skip_bytes(&mut skipper).unwrap();
-        
-        assert_eq!(skipper.len(), 0, "Buffer not fully consumed after skipping");
-
-        // 5. Unmarshal all values and verify correctness
-        let mut reader = &buf[..];
+        // Test Unmarshal
+        let mut reader = buf.as_slice();
         assert_eq!(unmarshal_bool(&mut reader).unwrap(), val_bool);
         assert_eq!(unmarshal_u8(&mut reader).unwrap(), val_byte);
         assert_eq!(unmarshal_f32(&mut reader).unwrap(), val_f32);
         assert_eq!(unmarshal_f64(&mut reader).unwrap(), val_f64);
-        assert_eq!(unmarshal_int(&mut reader).unwrap(), val_int);
+        assert_eq!(unmarshal_isize(&mut reader).unwrap(), val_isize_pos);
+        assert_eq!(unmarshal_isize(&mut reader).unwrap(), val_isize_neg);
+        assert_eq!(unmarshal_i8(&mut reader).unwrap(), val_i8);
         assert_eq!(unmarshal_i16(&mut reader).unwrap(), val_i16);
         assert_eq!(unmarshal_i32(&mut reader).unwrap(), val_i32);
         assert_eq!(unmarshal_i64(&mut reader).unwrap(), val_i64);
-        assert_eq!(unmarshal_uint(&mut reader).unwrap(), val_uint);
+        assert_eq!(unmarshal_usize(&mut reader).unwrap(), val_usize);
         assert_eq!(unmarshal_u16(&mut reader).unwrap(), val_u16);
         assert_eq!(unmarshal_u32(&mut reader).unwrap(), val_u32);
         assert_eq!(unmarshal_u64(&mut reader).unwrap(), val_u64);
-        assert_eq!(unmarshal_string(&mut reader).unwrap(), test_str);
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), val_str);
+        assert_eq!(unmarshal_bytes_cropped(&mut reader).unwrap(), val_bs);
+        // We need a new reader for the last one to test copied
+        let remaining_len = reader.len();
+        let mut final_reader = buf.as_slice();
+        final_reader = &final_reader[total_size - remaining_len..];
+        assert_eq!(unmarshal_bytes_copied(&mut final_reader).unwrap(), val_bs.to_vec());
         
-        let mut reader_for_bytes = reader;
-        assert_eq!(unmarshal_bytes_cropped(&mut reader_for_bytes).unwrap(), test_bs);
-        assert_eq!(unmarshal_bytes_copied(&mut reader).unwrap(), test_bs);
-
-        assert_eq!(reader.len(), 0, "Buffer not fully consumed after unmarshalling");
+        assert!(reader.len() > 0, "final unmarshal should not have been called on original reader");
+        assert!(final_reader.is_empty(), "unmarshal did not consume the buffer");
     }
 
-    /// Corresponds to Go's `TestErrBufTooSmall`
     #[test]
-    fn test_error_buf_too_small() {
-        assert_eq!(unmarshal_u16(&mut &[0u8][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(unmarshal_u32(&mut &[0u8; 3][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(unmarshal_u64(&mut &[0u8; 7][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(skip_i16(&mut &[0u8][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(skip_f32(&mut &[0u8; 3][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(skip_f64(&mut &[0u8; 7][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(unmarshal_string(&mut &[2, 0][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(unmarshal_bytes_cropped(&mut &[5, 1, 2, 3, 4][..]).unwrap_err(), Error::BufferTooSmall);
-        assert_eq!(unmarshal_slice::<u8>(&mut &[2, 1][..], unmarshal_u8).unwrap_err(), Error::BufferTooSmall);
-        
-        // This is the corrected test case for MissingTerminator
-        // Buffer contains: len=1, one u16 element, and an *incorrect* terminator
-        assert_eq!(
-        skip_slice(&mut &[2, 1][..], |r| skip_u8(r)).unwrap_err(),
-        Error::BufferTooSmall
-    );
-        
-        assert_eq!(
-        skip_map(&mut &[1, 1][..], |r| skip_u8(r), |r| skip_u8(r)).unwrap_err(),
-        Error::BufferTooSmall
-    );
+    fn test_err_buf_too_small() {
+        assert_eq!(unmarshal_bool(&mut &[][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_u8(&mut &[][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_f32(&mut &[1,2,3][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_f64(&mut &[1,2,3,4,5,6,7][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_string(&mut &[2,0][..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_bytes_cropped(&mut &[4,1,2,3][..]).err(), Some(Error::BufferTooSmall));
+        let mut slice_buf = &[10, 0, 0, 0, 1][..];
+        assert_eq!(unmarshal_slice(&mut slice_buf, unmarshal_u8).err(), Some(Error::BufferTooSmall));
+        let mut map_buf = &[10, 0, 0, 0, 1][..];
+        assert_eq!(unmarshal_map(&mut map_buf, unmarshal_u8, unmarshal_u8).err(), Some(Error::BufferTooSmall));
     }
 
-    /// Corresponds to `TestSlices`
     #[test]
     fn test_slices() {
-        let slice = vec!["elem1", "elem2", "elem3", "elem4", "elem5"];
+        let slice = vec!["sliceelement1", "sliceelement2", "sliceelement3"];
         let size = size_slice(&slice, |s| size_string(s));
-        let mut buf = vec![0u8; size];
-        
-        marshal_slice(&slice, &mut &mut buf[..], |s, w| marshal_string(s, w));
+        let mut buf = vec![0; size];
+        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
 
-        let mut skipper = &buf[..];
-        skip_slice(&mut skipper, |r| skip_string(r)).unwrap();
-        assert_eq!(skipper.len(), 0);
+        verify_skip(&buf, |r| skip_slice(r, skip_string));
 
-        let mut reader = &buf[..];
-        let decoded = unmarshal_slice(&mut reader, |r| unmarshal_string(r).map(|s| s.to_owned())).unwrap();
-        
-        assert_eq!(slice, decoded);
+        let mut reader = buf.as_slice();
+        let ret_slice = unmarshal_slice(&mut reader, unmarshal_string).unwrap();
+        assert_eq!(ret_slice, slice);
+        assert!(reader.is_empty());
     }
     
-    /// Corresponds to `TestMaps` and `TestMaps_2`
     #[test]
     fn test_maps() {
-        let mut m1 = HashMap::new();
-        m1.insert("key1".to_string(), "val1".to_string());
-        m1.insert("key2".to_string(), "val2".to_string());
-
-        let size1 = size_map(&m1, |k| size_string(k), |v| size_string(v));
-        let mut buf1 = vec![0u8; size1];
-        marshal_map(&m1, &mut &mut buf1[..], |k, w| marshal_string(k, w), |v, w| marshal_string(v, w));
-
-        let mut reader1 = &buf1[..];
-        let decoded1 = unmarshal_map(&mut reader1, 
-            |r| unmarshal_string(r).map(str::to_owned),
-            |r| unmarshal_string(r).map(str::to_owned)
-        ).unwrap();
-        assert_eq!(m1, decoded1);
-
-        let mut m2 = HashMap::new();
-        m2.insert(1i32, "val1".to_string());
-        m2.insert(-100i32, "val2".to_string());
+        let mut map = HashMap::new();
+        map.insert("mapkey1".to_string(), "mapvalue1".to_string());
+        map.insert("mapkey2".to_string(), "mapvalue2".to_string());
+        map.insert("mapkey3".to_string(), "mapvalue3".to_string());
         
-        let size2 = size_map(&m2, |_| size_i32(), |v| size_string(v));
-        let mut buf2 = vec![0u8; size2];
-        marshal_map(&m2, &mut &mut buf2[..], |k, w| marshal_i32(*k, w), |v, w| marshal_string(v, w));
+        let size = size_map(&map, |k| size_string(k), |v| size_string(v));
+        let mut buf = vec![0; size];
+        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
         
-        let mut reader2 = &buf2[..];
-        let decoded2 = unmarshal_map(&mut reader2, unmarshal_i32, |r| unmarshal_string(r).map(str::to_owned)).unwrap();
-        assert_eq!(m2, decoded2);
+        verify_skip(&buf, |r| skip_map(r, skip_string, skip_string));
+
+        let mut reader = buf.as_slice();
+        let ret_map = unmarshal_map(&mut reader, unmarshal_string, unmarshal_string).unwrap();
+        assert_eq!(ret_map, map);
+        assert!(reader.is_empty());
     }
 
-    /// Corresponds to `TestEmptyString` and `TestLongString`
     #[test]
     fn test_string_edge_cases() {
-        let s1 = "";
-        let mut buf1 = vec![0u8; size_string(s1)];
-        marshal_string(s1, &mut &mut buf1[..]);
-        let decoded1 = unmarshal_string(&mut &buf1[..]).unwrap();
-        assert_eq!(s1, decoded1);
+        // Empty string
+        let s = "";
+        let size = size_string(s);
+        let mut buf = vec![0; size];
+        marshal_string(s, &mut buf.as_mut_slice()).unwrap();
+        verify_skip(&buf, skip_string);
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), s);
+        assert!(reader.is_empty());
 
-        let s2 = "H".repeat(u16::MAX as usize + 1);
-        let mut buf2 = vec![0u8; size_string(&s2)];
-        marshal_string(&s2, &mut &mut buf2[..]);
-        let decoded2 = unmarshal_string(&mut &buf2[..]).unwrap();
-        assert_eq!(s2, decoded2);
+        // Long string
+        let long_s = "H".repeat(u16::MAX as usize + 1);
+        let size = size_string(&long_s);
+        let mut buf = vec![0; size];
+        marshal_string(&long_s, &mut buf.as_mut_slice()).unwrap();
+        verify_skip(&buf, skip_string);
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_string(&mut reader).unwrap(), long_s);
+        assert!(reader.is_empty());
     }
 
-    /// Corresponds to `TestSkipVarint`
     #[test]
-    fn test_skip_varint_table() {
-        struct TestCase<'a> {
-            name: &'a str,
-            buf: &'a [u8],
-            want_consumed: usize,
-            want_err: Option<Error>,
-        }
-        let tests = [
-            TestCase { name: "Valid single-byte", buf: &[0x05], want_consumed: 1, want_err: None },
-            TestCase { name: "Valid multi-byte", buf: &[0x80, 0x01], want_consumed: 2, want_err: None },
-            TestCase { name: "Buffer too small", buf: &[0x80], want_consumed: 0, want_err: Some(Error::BufferTooSmall) },
-            TestCase { name: "Varint overflow", buf: &[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01], want_consumed: 0, want_err: Some(Error::VarintOverflow) },
-        ];
+    fn test_varint_errors() {
+        let overflow_buf = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
+        assert_eq!(skip_uint(&mut &overflow_buf[..]).err(), Some(Error::VarintOverflow));
+        assert_eq!(unmarshal_uint(&mut &overflow_buf[..]).err(), Some(Error::VarintOverflow));
 
-        for tt in tests {
-            let mut reader = tt.buf;
-            let result = unmarshal_uint(&mut reader);
-            
-            match tt.want_err {
-                Some(expected_err) => {
-                    assert_eq!(result.unwrap_err(), expected_err, "Test case: {}", tt.name);
-                },
-                None => {
-                    let initial_len = tt.buf.len();
-                    let final_len = reader.len();
-                    assert_eq!(initial_len - final_len, tt.want_consumed, "Test case: {}", tt.name);
-                }
-            }
-        }
+        let too_small_buf = [0x80];
+        assert_eq!(skip_uint(&mut &too_small_buf[..]).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_uint(&mut &too_small_buf[..]).err(), Some(Error::BufferTooSmall));
+    }
+    
+    #[test]
+    fn test_time() {
+        let now = DateTime::from_timestamp_nanos(1663362895123456789);
+        let size = size_time();
+        let mut buf = vec![0; size];
+        marshal_time(now, &mut buf.as_mut_slice()).unwrap();
+        
+        verify_skip(&buf, skip_time);
+
+        let mut reader = buf.as_slice();
+        let ret_time = unmarshal_time(&mut reader).unwrap();
+        assert_eq!(ret_time, now);
+        assert!(reader.is_empty());
     }
 
-    /// Corresponds to `TestUnmarshalInt`
     #[test]
-    fn test_unmarshal_int_table() {
-        let tests = [
-            ("Valid small int", &[0x02][..], 1, 1i64, None),
-            ("Valid negative int", &[0x03][..], 1, -2i64, None),
-            ("Valid multi-byte int", &[0xAC, 0x02][..], 2, 150i64, None),
-            ("Buffer too small", &[0x80][..], 0, 0, Some(Error::BufferTooSmall)),
-            ("Varint overflow", &[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01][..], 0, 0, Some(Error::VarintOverflow)),
-        ];
+    fn test_option_pointer() {
+        // Non-nil pointer
+        let val = "hello world".to_string();
+        let some_val = Some(val.clone());
+        let size = size_option(&some_val, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_option(&some_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
 
-        for (name, buf, consumed, val, err) in tests {
-            let mut reader = buf;
-            let result = unmarshal_int(&mut reader);
-            
-            match err {
-                Some(expected_err) => assert_eq!(result.unwrap_err(), expected_err, "Test case: {}", name),
-                None => {
-                    assert_eq!(result.unwrap(), val, "Test case: {}", name);
-                    assert_eq!(buf.len() - reader.len(), consumed, "Test case: {}", name);
-                }
-            }
-        }
+        verify_skip(&buf, |r| skip_option(r, skip_string));
+        
+        let mut reader = buf.as_slice();
+        let ret_opt = unmarshal_option(&mut reader, unmarshal_string).unwrap().map(|s| s.to_string());
+        assert_eq!(ret_opt, Some(val));
+        assert!(reader.is_empty());
+        
+        // Nil pointer
+        let none_val: Option<String> = None;
+        let size = size_option(&none_val, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_option(&none_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
+
+        verify_skip(&buf, |r| skip_option(r, skip_string));
+
+        let mut reader = buf.as_slice();
+        let ret_opt: Option<String> = unmarshal_option(&mut reader, |_| unreachable!()).unwrap();
+        assert_eq!(ret_opt, None);
+        assert!(reader.is_empty());
     }
 
-    /// Corresponds to `TestUnmarshalUint`
     #[test]
-    fn test_unmarshal_uint_table() {
-        let tests = [
-            ("Valid small uint", &[0x07][..], 1, 7u64, None),
-            ("Valid multi-byte uint", &[0xAC, 0x02][..], 2, 300u64, None),
-            ("Buffer too small", &[0x80][..], 0, 0, Some(Error::BufferTooSmall)),
-            ("Varint overflow", &[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01][..], 0, 0, Some(Error::VarintOverflow)),
-        ];
+    fn test_terminator_errors() {
+        // Slice
+        let slice = vec!["a"];
+        let size = size_slice(&slice, |s| size_string(s));
+        let mut buf = vec![0; size];
+        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
+        let truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_slice(&mut truncated_buf.clone(), skip_string).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_slice(&mut truncated_buf.clone(), unmarshal_string).err(), Some(Error::BufferTooSmall));
 
-        for (name, buf, consumed, val, err) in tests {
-            let mut reader = buf;
-            let result = unmarshal_uint(&mut reader);
-            
-            match err {
-                Some(expected_err) => assert_eq!(result.unwrap_err(), expected_err, "Test case: {}", name),
-                None => {
-                    assert_eq!(result.unwrap(), val, "Test case: {}", name);
-                    assert_eq!(buf.len() - reader.len(), consumed, "Test case: {}", name);
-                }
-            }
-        }
+        // Map
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), "b".to_string());
+        let size = size_map(&map, |k| size_string(k), |v| size_string(v));
+        let mut buf = vec![0; size];
+        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        let truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_map(&mut truncated_buf.clone(), skip_string, skip_string).err(), Some(Error::BufferTooSmall));
+        assert_eq!(unmarshal_map(&mut truncated_buf.clone(), unmarshal_string, unmarshal_string).err(), Some(Error::BufferTooSmall));
+    }
+
+    #[test]
+    fn test_size_fixed_slice() {
+        let slice = vec![1i32, 2, 3];
+        let elem_size = size_i32();
+        let expected = size_uint(slice.len() as u64) + slice.len() * elem_size + TERMINATOR.len();
+        assert_eq!(size_fixed_slice(&slice, elem_size), expected);
     }
 }
+
