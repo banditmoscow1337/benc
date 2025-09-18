@@ -1,12 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rand::Rng;
+    use chrono::{DateTime, Utc};
+    use std::collections::HashMap;
     use benc::*;
-
-    // To run these tests, you'll need to add the following to your Cargo.toml:
-    // [dev-dependencies]
-    // rand = "0.8"
 
     fn verify_skip(mut bytes: &[u8], skipper: impl Fn(&mut &[u8]) -> Result<()>) {
         skipper(&mut bytes).unwrap();
@@ -15,22 +11,21 @@ mod tests {
 
     #[test]
     fn test_data_types() {
-        let mut rng = rand::thread_rng();
-
+        // DEVFIX: Replaced `rand::rng()` with idiomatic `rand::random()` calls.
         let val_bool = true;
         let val_byte = 128u8;
-        let val_f32: f32 = rng.gen();
-        let val_f64: f64 = rng.gen();
+        let val_f32: f32 = rand::random();
+        let val_f64: f64 = rand::random();
         let val_isize_pos: isize = isize::MAX;
         let val_isize_neg: isize = -12345;
         let val_i8: i8 = -1;
         let val_i16: i16 = -1;
-        let val_i32: i32 = rng.gen();
-        let val_i64: i64 = rng.gen();
+        let val_i32: i32 = rand::random();
+        let val_i64: i64 = rand::random();
         let val_usize: usize = usize::MAX;
         let val_u16: u16 = 160;
-        let val_u32: u32 = rng.gen();
-        let val_u64: u64 = rng.gen();
+        let val_u32: u32 = rand::random();
+        let val_u64: u64 = rand::random();
         let val_str = "Hello World!";
         let val_bs: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -143,32 +138,37 @@ mod tests {
         let slice = vec!["sliceelement1", "sliceelement2", "sliceelement3"];
         let size = size_slice(&slice, |s| size_string(s));
         let mut buf = vec![0; size];
-        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_slice(&slice, &mut writer, |s, w| marshal_string(s, w)).unwrap();
 
         verify_skip(&buf, |r| skip_slice(r, skip_string));
 
         let mut reader = buf.as_slice();
-        let ret_slice = unmarshal_slice(&mut reader, unmarshal_string).unwrap();
-        assert_eq!(ret_slice, slice);
+        let ret_slice: Vec<String> = unmarshal_slice(&mut reader, |r| unmarshal_string(r).map(ToString::to_string)).unwrap();
+        let original_slice_as_string: Vec<String> = slice.iter().map(|&s| s.to_string()).collect();
+        assert_eq!(ret_slice, original_slice_as_string);
         assert!(reader.is_empty());
     }
     
     #[test]
     fn test_maps() {
         let mut map = HashMap::new();
-        map.insert("mapkey1".to_string(), "mapvalue1".to_string());
-        map.insert("mapkey2".to_string(), "mapvalue2".to_string());
-        map.insert("mapkey3".to_string(), "mapvalue3".to_string());
+        map.insert("mapkey1", "mapvalue1");
+        map.insert("mapkey2", "mapvalue2");
+        map.insert("mapkey3", "mapvalue3");
         
         let size = size_map(&map, |k| size_string(k), |v| size_string(v));
         let mut buf = vec![0; size];
-        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_map(&map, &mut writer, |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
         
         verify_skip(&buf, |r| skip_map(r, skip_string, skip_string));
 
         let mut reader = buf.as_slice();
-        let ret_map = unmarshal_map(&mut reader, unmarshal_string, unmarshal_string).unwrap();
-        assert_eq!(ret_map, map);
+        let ret_map: HashMap<&str, &str> = unmarshal_map(&mut reader, unmarshal_string, unmarshal_string).unwrap();
+
+        let expected_map: HashMap<&str, &str> = map.iter().map(|(k, v)| (*k, *v)).collect();
+        assert_eq!(ret_map, expected_map);
         assert!(reader.is_empty());
     }
 
@@ -178,7 +178,8 @@ mod tests {
         let s = "";
         let size = size_string(s);
         let mut buf = vec![0; size];
-        marshal_string(s, &mut buf.as_mut_slice()).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_string(s, &mut writer).unwrap();
         verify_skip(&buf, skip_string);
         let mut reader = buf.as_slice();
         assert_eq!(unmarshal_string(&mut reader).unwrap(), s);
@@ -188,7 +189,8 @@ mod tests {
         let long_s = "H".repeat(u16::MAX as usize + 1);
         let size = size_string(&long_s);
         let mut buf = vec![0; size];
-        marshal_string(&long_s, &mut buf.as_mut_slice()).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_string(&long_s, &mut writer).unwrap();
         verify_skip(&buf, skip_string);
         let mut reader = buf.as_slice();
         assert_eq!(unmarshal_string(&mut reader).unwrap(), long_s);
@@ -211,7 +213,8 @@ mod tests {
         let now = DateTime::from_timestamp_nanos(1663362895123456789);
         let size = size_time();
         let mut buf = vec![0; size];
-        marshal_time(now, &mut buf.as_mut_slice()).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_time(now, &mut writer).unwrap();
         
         verify_skip(&buf, skip_time);
 
@@ -228,12 +231,13 @@ mod tests {
         let some_val = Some(val.clone());
         let size = size_option(&some_val, |s| size_string(s));
         let mut buf = vec![0; size];
-        marshal_option(&some_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_option(&some_val, &mut writer, |v, w| marshal_string(v, w)).unwrap();
 
         verify_skip(&buf, |r| skip_option(r, skip_string));
         
         let mut reader = buf.as_slice();
-        let ret_opt = unmarshal_option(&mut reader, unmarshal_string).unwrap().map(|s| s.to_string());
+        let ret_opt = unmarshal_option(&mut reader, |r| unmarshal_string(r).map(ToString::to_string)).unwrap();
         assert_eq!(ret_opt, Some(val));
         assert!(reader.is_empty());
         
@@ -241,7 +245,8 @@ mod tests {
         let none_val: Option<String> = None;
         let size = size_option(&none_val, |s| size_string(s));
         let mut buf = vec![0; size];
-        marshal_option(&none_val, &mut buf.as_mut_slice(), |v, w| marshal_string(v, w)).unwrap();
+        let mut writer = buf.as_mut_slice();
+        marshal_option(&none_val, &mut writer, |v, w| marshal_string(v, w)).unwrap();
 
         verify_skip(&buf, |r| skip_option(r, skip_string));
 
@@ -257,28 +262,201 @@ mod tests {
         let slice = vec!["a"];
         let size = size_slice(&slice, |s| size_string(s));
         let mut buf = vec![0; size];
-        marshal_slice(&slice, &mut buf.as_mut_slice(), |s, w| marshal_string(s, w)).unwrap();
-        let truncated_buf = &buf[..size - 1];
-        assert_eq!(skip_slice(&mut truncated_buf.clone(), skip_string).err(), Some(Error::BufferTooSmall));
-        assert_eq!(unmarshal_slice(&mut truncated_buf.clone(), unmarshal_string).err(), Some(Error::BufferTooSmall));
+        let mut writer = buf.as_mut_slice();
+        marshal_slice(&slice, &mut writer, |s, w| marshal_string(s, w)).unwrap();
+        let mut truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_slice(&mut truncated_buf, skip_string).err(), Some(Error::BufferTooSmall));
+        let mut truncated_buf_for_unmarshal = &buf[..size - 1];
+        assert_eq!(unmarshal_slice(&mut truncated_buf_for_unmarshal, |r| unmarshal_string(r).map(ToString::to_string)).err(), Some(Error::BufferTooSmall));
 
         // Map
         let mut map = HashMap::new();
-        map.insert("a".to_string(), "b".to_string());
+        map.insert("a", "b");
         let size = size_map(&map, |k| size_string(k), |v| size_string(v));
         let mut buf = vec![0; size];
-        marshal_map(&map, &mut buf.as_mut_slice(), |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
-        let truncated_buf = &buf[..size - 1];
-        assert_eq!(skip_map(&mut truncated_buf.clone(), skip_string, skip_string).err(), Some(Error::BufferTooSmall));
-        assert_eq!(unmarshal_map(&mut truncated_buf.clone(), unmarshal_string, unmarshal_string).err(), Some(Error::BufferTooSmall));
+        let mut writer = buf.as_mut_slice();
+        marshal_map(&map, &mut writer, |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        let mut truncated_buf = &buf[..size - 1];
+        assert_eq!(skip_map(&mut truncated_buf, skip_string, skip_string).err(), Some(Error::BufferTooSmall));
+        let mut truncated_buf_for_unmarshal = &buf[..size - 1];
+        let unmarshal_result = unmarshal_map(&mut truncated_buf_for_unmarshal, 
+            unmarshal_string,
+            unmarshal_string
+        );
+        assert_eq!(unmarshal_result.err(), Some(Error::BufferTooSmall));
     }
 
     #[test]
     fn test_size_fixed_slice() {
         let slice = vec![1i32, 2, 3];
         let elem_size = size_i32();
-        let expected = size_uint(slice.len() as u64) + slice.len() * elem_size + TERMINATOR.len();
+        let expected = size_uint(slice.len() as u64) + slice.len() * elem_size + [1, 1, 1, 1].len();
         assert_eq!(size_fixed_slice(&slice, elem_size), expected);
     }
-}
 
+    #[test]
+    fn test_marshal_err_buf_too_small() {
+        // DEVFIX: Changed fixed-size array references to mutable slices to fix type mismatch errors.
+        // The marshalling functions expect `&mut &mut [u8]`, not `&mut &mut [u8; N]`.
+        let mut buf_0 = [];
+        let mut writer_0 = buf_0.as_mut_slice();
+        assert_eq!(marshal_string("a", &mut writer_0).err(), Some(Error::BufferTooSmall));
+        
+        let mut buf_0 = [];
+        let mut writer_0 = buf_0.as_mut_slice();
+        assert_eq!(marshal_bytes(&[1], &mut writer_0).err(), Some(Error::BufferTooSmall));
+
+        let mut buf_0 = [];
+        let mut writer_0 = buf_0.as_mut_slice();
+        assert_eq!(marshal_u16(1, &mut writer_0).err(), Some(Error::BufferTooSmall));
+        
+        let mut buf_2 = [0u8; 2]; // Enough for len, but not terminator+data
+        let mut writer_2 = buf_2.as_mut_slice();
+        let slice = vec![1u32];
+        // DEVFIX: Wrapped marshaller in a closure to satisfy higher-ranked trait bounds.
+        assert_eq!(marshal_slice(&slice, &mut writer_2, |v, w| marshal_u32(*v, w)).err(), Some(Error::BufferTooSmall));
+
+        let mut buf_0 = [];
+        let mut writer_0 = buf_0.as_mut_slice();
+        let mut map = HashMap::new();
+        map.insert(1u32, 2u32);
+        // DEVFIX: Wrapped marshallers in closures.
+        assert_eq!(marshal_map(&map, &mut writer_0, |k, w| marshal_u32(*k, w), |v, w| marshal_u32(*v, w)).err(), Some(Error::BufferTooSmall));
+
+        let mut buf_0 = [];
+        let mut writer_0 = buf_0.as_mut_slice();
+        assert_eq!(marshal_option(&Some("a"), &mut writer_0, |v, w| marshal_string(v, w)).err(), Some(Error::BufferTooSmall));
+    }
+
+    #[test]
+    fn test_unmarshal_invalid_utf8() {
+        // A varint for length 4, followed by an invalid UTF-8 sequence.
+        let invalid_utf8_buf = &[4, 0xC3, 0x28, 0, 0];
+        let mut reader = invalid_utf8_buf.as_slice();
+        assert!(matches!(unmarshal_string(&mut reader).err(), Some(Error::InvalidUtf8(_))));
+    }
+
+    #[test]
+    fn test_invalid_terminator() {
+        // A valid slice, but with a wrong terminator [1,1,1,2]
+        let slice_data = vec![1u8];
+        let size = size_slice(&slice_data, |_| size_u8());
+        let mut buf = vec![0; size];
+        let mut writer = buf.as_mut_slice();
+        // DEVFIX: Wrapped marshaller in a closure.
+        marshal_slice(&slice_data, &mut writer, |v, w| marshal_u8(*v, w)).unwrap();
+        // Corrupt the terminator
+        buf[size - 1] = 2; 
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_slice(&mut reader, unmarshal_u8).err(), Some(Error::MissingTerminator));
+        
+        // A valid map, but with a wrong terminator
+        let mut map = HashMap::new();
+        map.insert(1u8, 2u8);
+        let size = size_map(&map, |_| size_u8(), |_| size_u8());
+        let mut buf = vec![0; size];
+        let mut writer = buf.as_mut_slice();
+        // DEVFIX: Wrapped marshallers in closures.
+        marshal_map(&map, &mut writer, |k, w| marshal_u8(*k, w), |v, w| marshal_u8(*v, w)).unwrap();
+        // Corrupt the terminator
+        buf[size - 1] = 2;
+        let mut reader = buf.as_slice();
+        assert_eq!(unmarshal_map(&mut reader, unmarshal_u8, unmarshal_u8).err(), Some(Error::MissingTerminator));
+    }
+
+    #[test]
+    fn test_unmarshal_out_of_range() {
+        // Marshal a u64 that is the max value.
+        let large_val = u64::MAX;
+        let size = size_uint(large_val);
+        let mut buf = vec![0; size];
+        let mut writer = buf.as_mut_slice();
+        marshal_uint(large_val, &mut writer).unwrap();
+        
+        let mut reader = buf.as_slice();
+        // This will fail on 32-bit platforms, which is the correct behavior.
+        // On 64-bit, it will succeed.
+        // DEVFIX: Cast `usize::MAX` to `u64` to fix the type mismatch.
+        // This correctly checks if `usize` is smaller than `u64` (i.e., on 32-bit platforms).
+        if (usize::MAX as u64) < u64::MAX {
+             assert_eq!(unmarshal_usize(&mut reader).err(), Some(Error::OutOfRange));
+        } else {
+             assert_eq!(unmarshal_usize(&mut reader).unwrap(), large_val as usize);
+        }
+    }
+
+    #[test]
+    fn test_zigzag_encoding() {
+        // DEVFIX: This test now works because `encode_zigzag` and `decode_zigzag`
+        // have been made public in `lib.rs`.
+        let values = [0i64, -1, 1, -2, 2, i64::MAX, i64::MIN, 2147483647, -2147483648];
+        for &v in &values {
+            assert_eq!(decode_zigzag(encode_zigzag(v)), v);
+        }
+    }
+
+    #[test]
+    fn test_bool_unmarshal_variants() {
+        let mut reader = &[0u8][..];
+        assert_eq!(unmarshal_bool(&mut reader).unwrap(), false);
+
+        let mut reader = &[1u8][..];
+        assert_eq!(unmarshal_bool(&mut reader).unwrap(), true);
+
+        // Any other value is false, per Go implementation compatibility.
+        let mut reader = &[2u8][..];
+        assert_eq!(unmarshal_bool(&mut reader).unwrap(), false);
+        let mut reader = &[255u8][..];
+        assert_eq!(unmarshal_bool(&mut reader).unwrap(), false);
+    }
+
+    #[test]
+    fn test_empty_collections() {
+        // Empty Slice
+        let slice: Vec<String> = vec![];
+        let size = size_slice(&slice, |s| size_string(s));
+        let mut buf = vec![0; size];
+        let mut writer = buf.as_mut_slice();
+        marshal_slice(&slice, &mut writer, |s, w| marshal_string(s, w)).unwrap();
+        
+        verify_skip(&buf, |r| skip_slice(r, skip_string));
+        
+        let mut reader = buf.as_slice();
+        let ret_slice: Vec<String> = unmarshal_slice(&mut reader, |r| unmarshal_string(r).map(String::from)).unwrap();
+        assert_eq!(ret_slice, slice);
+        assert!(reader.is_empty());
+        
+        // Empty Map
+        let map: HashMap<String, String> = HashMap::new();
+        let size = size_map(&map, |k| size_string(k), |v| size_string(v));
+        let mut buf = vec![0; size];
+        let mut writer = buf.as_mut_slice();
+        marshal_map(&map, &mut writer, |k, w| marshal_string(k, w), |v, w| marshal_string(v, w)).unwrap();
+        
+        verify_skip(&buf, |r| skip_map(r, skip_string, skip_string));
+        
+        let mut reader = buf.as_slice();
+        let ret_map: HashMap<String, String> = unmarshal_map(&mut reader, 
+            |r| unmarshal_string(r).map(String::from), 
+            |r| unmarshal_string(r).map(String::from)
+        ).unwrap();
+        assert_eq!(ret_map, map);
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn test_time_out_of_range() {
+        // These are outside the i64 nanosecond range and marshal_time should default to 0.
+        let times = [DateTime::<Utc>::MAX_UTC, DateTime::<Utc>::MIN_UTC];
+        for &t in &times {
+            let size = size_time();
+            let mut buf = vec![0; size];
+            let mut writer = buf.as_mut_slice();
+            marshal_time(t, &mut writer).unwrap();
+            
+            let mut reader = buf.as_slice();
+            let unmarshalled_nanos = unmarshal_i64(&mut reader).unwrap();
+            assert_eq!(unmarshalled_nanos, 0);
+        }
+    }
+}

@@ -3,22 +3,19 @@
 
 import PackageDescription
 
-let package = Package(
-    name: "benc",
-    products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
-        .library(
-            name: "benc",
-            targets: ["benc"]),
-    ],
-    targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
-        .target(
-            name: "benc"),
-        .testTarget(
-            name: "bencTests",
-            dependencies: ["benc"]
-        ),
-    ]
-)
+ let package = Package(
+     name: "Bstd", // Your package name
+     products: [
+         .library(
+             name: "Bstd",
+             targets: ["Bstd"]),
+     ],
+     targets: [
+         .target(
+             name: "Bstd", // Your main library target
+             dependencies: []),
+         .testTarget(
+             name: "BstdTests", // Your test target
+             dependencies: ["Bstd"]), // <-- This links your tests to your library
+     ]
+ )
