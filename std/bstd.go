@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"math"
 	"strconv"
+	"time"
 	"unsafe"
 
 	"github.com/deneonet/benc"
@@ -140,19 +141,27 @@ func UnmarshalUnsafeString(n int, b []byte) (int, string, error) {
 //   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
-func SkipSlice(n int, b []byte) (int, error) {
-	lb := len(b)
-
-	for {
-		if lb-n < 4 {
-			return 0, benc.ErrBufTooSmall
-		}
-
-		if b[n] == 1 && b[n+1] == 1 && b[n+2] == 1 && b[n+3] == 1 {
-			return n + 4, nil
-		}
-		n++
+// It now accepts a skipper function to correctly skip each element and much faster on large sets.
+func SkipSlice(n int, b []byte, skipElement func(n int, b []byte) (int, error)) (int, error) {
+	// 1. Unmarshal the number of elements in the slice.
+	n, elementCount, err := UnmarshalUint(n, b)
+	if err != nil {
+		return 0, err
 	}
+
+	// 2. Loop 'elementCount' times, calling the provided skipper for each element.
+	for i := uint(0); i < elementCount; i++ {
+		n, err = skipElement(n, b)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// 3. Finally, skip the 4-byte terminator.
+	if len(b)-n < 4 {
+		return 0, benc.ErrBufTooSmall
+	}
+	return n + 4, nil
 }
 
 // Returns the bytes needed to marshal a slice with a dynamic element size.
@@ -239,19 +248,33 @@ func UnmarshalSlice[T any](n int, b []byte, unmarshaler interface{}) (int, []T, 
 //   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled map.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
-func SkipMap(n int, b []byte) (int, error) {
-	lb := len(b)
-
-	for {
-		if lb-n < 4 {
-			return 0, benc.ErrBufTooSmall
-		}
-
-		if b[n] == 1 && b[n+1] == 1 && b[n+2] == 1 && b[n+3] == 1 {
-			return n + 4, nil
-		}
-		n++
+// It now accepts a skipper function to correctly skip each element and much faster on large sets.
+func SkipMap(n int, b []byte, skipKey func(n int, b []byte) (int, error), skipValue func(n int, b []byte) (int, error)) (int, error) {
+	// 1. Unmarshal the number of key-value pairs in the map.
+	n, pairCount, err := UnmarshalUint(n, b)
+	if err != nil {
+		return 0, err
 	}
+
+	// 2. Loop 'pairCount' times, skipping one key and one value in each iteration.
+	for i := uint(0); i < pairCount; i++ {
+		// Skip the key
+		n, err = skipKey(n, b)
+		if err != nil {
+			return 0, err
+		}
+		// Skip the value
+		n, err = skipValue(n, b)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// 3. Finally, skip the 4-byte terminator.
+	if len(b)-n < 4 {
+		return 0, benc.ErrBufTooSmall
+	}
+	return n + 4, nil
 }
 
 // Returns the bytes needed to marshal a map.
@@ -345,7 +368,8 @@ func UnmarshalMap[K comparable, V any](n int, b []byte, kUnmarshaler interface{}
 				return 0, nil, err
 			}
 		default:
-			panic("benc: invalid `kUnmarshaler` provided in `UnmarshalMap`")
+			// FIX: Corrected copy-paste error in panic message.
+			panic("benc: invalid `vUnmarshaler` provided in `UnmarshalMap`")
 		}
 
 		ts[k] = v
@@ -873,7 +897,40 @@ func UnmarshalInt16(n int, b []byte) (int, int16, error) {
 	return n + 2, v, nil
 }
 
-// TODO: Int8
+// Returns the new offset 'n' after skipping the marshalled 8-bit integer.
+//
+// Possible errors returned:
+//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
+//
+// If a error is returned, n (the int returned) equals zero ( 0 ).
+func SkipInt8(n int, b []byte) (int, error) {
+	return SkipByte(n, b)
+}
+
+// Returns the bytes needed to marshal a 8-bit integer.
+func SizeInt8() int {
+	return 1
+}
+
+// Returns the new offset 'n' after marshalling the 8-bit integer.
+func MarshalInt8(n int, b []byte, v int8) int {
+	return MarshalByte(n, b, byte(v))
+}
+
+// Returns the new offset 'n', as well as the 8-bit integer, that got unmarshalled.
+//
+// Possible errors returned:
+//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 8-bit integer.
+//
+// If a error is returned, n (the int returned) equals zero ( 0 ).
+func UnmarshalInt8(n int, b []byte) (int, int8, error) {
+	n, bi8, err := UnmarshalByte(n, b)
+	if err != nil {
+		return n, -1, err
+	}
+
+	return n, int8(bi8), err
+}
 
 // Returns the new offset 'n' after skipping the marshalled 64-bit float.
 //
@@ -1025,4 +1082,96 @@ func decodeZigZag[T constraints.Unsigned](t T) T {
 		return ^(t >> 1)
 	}
 	return t >> 1
+}
+
+// Time functions
+func SkipTime(n int, b []byte) (int, error) {
+	return SkipInt64(n, b)
+}
+
+func SizeTime() int {
+	return 8 // int64 for UnixNano
+}
+
+func MarshalTime(n int, b []byte, t time.Time) int {
+	return MarshalInt64(n, b, t.UnixNano())
+}
+
+func UnmarshalTime(n int, b []byte) (int, time.Time, error) {
+	n, nano, err := UnmarshalInt64(n, b)
+	if err != nil {
+		return n, time.Time{}, err
+	}
+	return n, time.Unix(0, nano), nil
+}
+
+// Pointer fields by adding a boolean prefix
+
+// Skips over a marshalled pointer field. It reads the boolean prefix and,
+// if true, calls the provided element skipper to skip the value's data.
+func SkipPointer(n int, b []byte, skipElement func(n int, b []byte) (int, error)) (int, error) {
+	// 1. Unmarshal the boolean flag that indicates if a value is present.
+	n, hasValue, err := UnmarshalBool(n, b)
+	if err != nil {
+		return 0, err
+	}
+
+	// 2. If a value was marshalled (hasValue is true), skip it.
+	if hasValue {
+		return skipElement(n, b)
+	}
+
+	// 3. If no value was marshalled, we're done.
+	return n, nil
+}
+
+func SizePointer[T any](v *T, sizeFn SizeFunc[T]) int {
+	if v != nil {
+		return SizeBool() + sizeFn(*v)
+	}
+	return SizeBool()
+}
+
+func MarshalPointer[T any](n int, b []byte, v *T, marshalFn MarshalFunc[T]) int {
+	n = MarshalBool(n, b, v != nil)
+
+	if v != nil {
+		n = marshalFn(n, b, *v)
+	}
+
+	return n
+}
+
+func UnmarshalPointer[T any](n int, b []byte, unmarshaler interface{}) (int, *T, error) {
+	// 1. Unmarshal the boolean flag.
+	n, hasValue, err := UnmarshalBool(n, b)
+	if err != nil {
+		// On error, return a nil pointer and zero offset, consistent with library style.
+		return 0, nil, err
+	}
+
+	// 2. If the flag is false, it's a nil pointer. Return immediately.
+	if !hasValue {
+		return n, nil, nil
+	}
+
+	// 3. Only if the flag is true, create and unmarshal the value.
+	var t T
+	switch p := unmarshaler.(type) {
+	case func(n int, b []byte) (int, T, error):
+		n, t, err = p(n, b)
+		if err != nil {
+			return 0, nil, err
+		}
+	case func(n int, b []byte, v *T) (int, error):
+		n, err = p(n, b, &t)
+		if err != nil {
+			return 0, nil, err
+		}
+	default:
+		// It's good practice to handle unexpected unmarshaler types.
+		panic("benc: invalid `unmarshaler` provided in `UnmarshalPointer`")
+	}
+
+	return n, &t, nil
 }

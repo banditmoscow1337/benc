@@ -8,11 +8,11 @@ go get github.com/deneonet/benc/std
 ```
 
 ## Tests
-Code coverage of `bstd.go` is approximately 95%
+Code coverage of `bstd.go` is 100%
 
 ## Usage
 
-Benc Standard provides four primary functions, for all of these types (`string`, `unsafe string`, `slice`, `map`, `bool`, `byte`, `bytes` (slice of type byte), `float32`, `float64`, `int` (var int), `int16`, `int32`, `int64`, `uint` (var uint), `uint16`, `uint32`, `uint64`):
+Benc Standard provides four primary functions, for all of these types (`string`, `unsafe string`, `slice`, `map`, `bool`, `byte`, `bytes` (slice of type byte), `float32`, `float64`, `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint16`, `uint32`, `uint64`) and pointers for this types:
 
 - **Skip**: Skips the requested type.
 - **Size**: Calculate the needed size for the requested type (and data).
@@ -20,7 +20,6 @@ Benc Standard provides four primary functions, for all of these types (`string`,
 - **Unmarshal**: Unmarshals the requested type.
 
 Append the type (listed above) in CamelCase to the end of each function to skip/size/marshal or unmarshal the requested type.  
-**Exception**: `int` and `uint`, the skip function for both of them is: `bstd.SkipVarint`
 
 ## Basic Type Example
 

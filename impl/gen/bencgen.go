@@ -22,13 +22,28 @@ const (
 	ArrayMap
 )
 
+func skipSliceLegacy(n int, b []byte) (int, error) { //unsafe
+	lb := len(b)
+
+	for {
+		if lb-n < 4 {
+			return 0, benc.ErrBufTooSmall
+		}
+
+		if b[n] == 1 && b[n+1] == 1 && b[n+2] == 1 && b[n+3] == 1 {
+			return n + 4, nil
+		}
+		n++
+	}
+}
+
 func skipByType(tn int, b []byte, t byte) (n int, err error) {
 	n = tn
 	switch t {
 	case Bytes:
 		n, err = bstd.SkipBytes(n, b)
 	case ArrayMap:
-		n, err = bstd.SkipSlice(n, b)
+		n, err = skipSliceLegacy(n, b)
 	case Varint:
 		n, err = bstd.SkipVarint(n, b)
 	case Container:
