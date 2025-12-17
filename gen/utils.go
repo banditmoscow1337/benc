@@ -95,6 +95,10 @@ func GenerateRune(r *rand.Rand, _ int) rune {
 	return r.Int31()
 }
 
+func GenerateTime(r *rand.Rand, _ int) time.Time {
+	return RandomTime(r)
+}
+
 //endregion
 
 // region Slice Generators

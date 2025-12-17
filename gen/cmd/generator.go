@@ -18,6 +18,7 @@ var fixedSizeTypes = map[string]bool{
 	"bool": true, "byte": true, "rune": true, "int8": true, "uint8": true,
 	"int16": true, "uint16": true, "int32": true, "uint32": true,
 	"int64": true, "uint64": true, "float32": true, "float64": true,
+	"time.Time": true,
 }
 
 // Generator holds the state of the generation process.
@@ -39,12 +40,12 @@ func NewGenerator(pkgName string) *Generator {
 func (g *Generator) isUnsupportedType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.Ident:
-		// Check for named unsupported types.
 		switch t.Name {
-		case "any", "complex64", "complex128":
+		// Explicitly ignore 'any' along with other unsupported primitives
+		case "any", "complex64", "complex128", "uintptr", "chan", "func":
 			return true
 		default:
-			// If the identifier is a custom type, we need to look up its definition.
+			// Check recursively if the custom type resolves to something unsupported
 			if ts, ok := g.typeSpecs[t.Name]; ok {
 				return g.isUnsupportedType(ts.Type)
 			}
@@ -52,20 +53,28 @@ func (g *Generator) isUnsupportedType(expr ast.Expr) bool {
 		}
 
 	case *ast.InterfaceType:
-		// Check for the empty interface: interface{}
-		return t.Methods == nil || len(t.Methods.List) == 0
+		// Ignore all interfaces (interface{}, interface{ Method() }, etc.)
+		return true
 
 	case *ast.ArrayType:
-		// If the element type is unsupported, the slice is unsupported.
 		return g.isUnsupportedType(t.Elt)
 
 	case *ast.MapType:
-		// If either the key or value type is unsupported, the map is unsupported.
 		return g.isUnsupportedType(t.Key) || g.isUnsupportedType(t.Value)
 
 	case *ast.StarExpr:
-		// Check the underlying type for pointers.
 		return g.isUnsupportedType(t.X)
+
+	case *ast.SelectorExpr:
+		sel := g.exprToString(t)
+		// Ignore sync.Mutex and sync.RWMutex
+		if sel == "sync.Mutex" || sel == "sync.RWMutex" {
+			return true
+		}
+		if sel == "unsafe.Pointer" {
+			return true
+		}
+		return false
 
 	default:
 		return false
@@ -111,7 +120,6 @@ func (g *Generator) GenerateTests(types []*ast.TypeSpec) (string, error) {
 		g.generateTestComparer(ts)
 	}
 
-	// Find the first top-level struct to be the main test subject.
 	var topLevelStruct *ast.TypeSpec
 	for _, ts := range types {
 		if _, ok := ts.Type.(*ast.StructType); ok {
@@ -148,21 +156,20 @@ func (g *Generator) generateMethods(ts *ast.TypeSpec) error {
 
 func (g *Generator) generateStructMethods(ts *ast.TypeSpec) error {
 	name := ts.Name.Name
-	// Use a descriptive, camelCase receiver name to avoid conflicts.
 	receiver := strings.ToLower(name[:1]) + name[1:]
 
-	// Pre-filter fields to exclude unsupported types.
 	var supportedFields []*ast.Field
 	for _, field := range ts.Type.(*ast.StructType).Fields.List {
 		if g.isUnsupportedType(field.Type) {
 			for _, fName := range field.Names {
-				log.Printf("INFO: Skipping unsupported field %s.%s with type %s", name, fName.Name, g.exprToString(field.Type))
+				log.Printf("INFO: Skipping unsupported field %s.%s (Type: %s)", name, fName.Name, g.exprToString(field.Type))
 			}
 			continue
 		}
 		supportedFields = append(supportedFields, field)
 	}
 
+	// Size Method
 	g.printf("func (%s *%s) Size() (s int) {\n", receiver, name)
 	for _, field := range supportedFields {
 		for _, fName := range field.Names {
@@ -171,6 +178,7 @@ func (g *Generator) generateStructMethods(ts *ast.TypeSpec) error {
 	}
 	g.printf("\treturn\n}\n\n")
 
+	// Marshal Method
 	g.printf("func (%s *%s) Marshal(tn int, b []byte) (n int) {\n\tn = tn\n", receiver, name)
 	for _, field := range supportedFields {
 		for _, fName := range field.Names {
@@ -179,6 +187,7 @@ func (g *Generator) generateStructMethods(ts *ast.TypeSpec) error {
 	}
 	g.printf("\treturn n\n}\n\n")
 
+	// Unmarshal Method
 	g.printf("func (%s *%s) Unmarshal(tn int, b []byte) (n int, err error) {\n\tn = tn\n", receiver, name)
 	for _, field := range supportedFields {
 		for _, fName := range field.Names {
@@ -191,13 +200,11 @@ func (g *Generator) generateStructMethods(ts *ast.TypeSpec) error {
 
 func (g *Generator) generateMapAliasMethods(ts *ast.TypeSpec) error {
 	name := ts.Name.Name
-	// Use a descriptive, camelCase receiver name to avoid conflicts.
 	receiver := strings.ToLower(name[:1]) + name[1:]
 	mapType := ts.Type.(*ast.MapType)
 
-	// Check if the map alias itself uses unsupported types.
 	if g.isUnsupportedType(mapType) {
-		log.Printf("INFO: Skipping generation for map alias %s because it uses unsupported types.", name)
+		log.Printf("INFO: Skipping generation for map alias %s due to unsupported types.", name)
 		return nil
 	}
 
@@ -217,7 +224,6 @@ func (g *Generator) generateMapAliasMethods(ts *ast.TypeSpec) error {
 
 // --- Expression Logic ---
 
-// typeGenInfo holds basic information about a type for code generation.
 type typeGenInfo struct {
 	TypeName      string
 	Marshaler     string
@@ -227,12 +233,11 @@ type typeGenInfo struct {
 	IsFixedSize   bool
 }
 
-// getTypeInfo extracts basic generation info for a given AST expression.
 func (g *Generator) getTypeInfo(expr ast.Expr) typeGenInfo {
 	typeName := g.exprToString(expr)
+
 	switch t := expr.(type) {
 	case *ast.Ident:
-		// Case 1: It's a custom type defined in the same package.
 		if _, ok := g.typeSpecs[t.Name]; ok {
 			return typeGenInfo{
 				TypeName:      t.Name,
@@ -240,19 +245,15 @@ func (g *Generator) getTypeInfo(expr ast.Expr) typeGenInfo {
 				TestComparer:  fmt.Sprintf("Compare%s", t.Name),
 			}
 		}
-
-		// Case 2: It's a primitive Go type.
 		title := strings.Title(t.Name)
-		// Handle special cases for byte and rune aliases.
 		if t.Name == "byte" || t.Name == "uint8" {
 			title = "Byte"
-			typeName = "byte" // Standardize on 'byte' for consistency.
+			typeName = "byte"
 		}
 		if t.Name == "rune" {
 			title = "Int32"
 			typeName = "rune"
 		}
-
 		return typeGenInfo{
 			TypeName:      typeName,
 			Marshaler:     "bstd.Marshal" + title,
@@ -260,6 +261,33 @@ func (g *Generator) getTypeInfo(expr ast.Expr) typeGenInfo {
 			TestGenerator: "btst.Generate" + title,
 			TestComparer:  fmt.Sprintf("btst.ComparePrimitive[%s]", typeName),
 			IsFixedSize:   fixedSizeTypes[t.Name],
+		}
+
+	case *ast.StarExpr:
+		eltInfo := g.getTypeInfo(t.X)
+		return typeGenInfo{
+			TypeName:      "*" + eltInfo.TypeName,
+			TestGenerator: fmt.Sprintf("func(r *rand.Rand, d int) *%s { return btst.GeneratePointer(r, d, %s) }", eltInfo.TypeName, eltInfo.TestGenerator),
+			TestComparer:  fmt.Sprintf("func(a, b *%s) error { return btst.ComparePointer(a, b, %s) }", eltInfo.TypeName, eltInfo.TestComparer),
+		}
+
+	case *ast.SelectorExpr:
+		sel := g.exprToString(t)
+		if sel == "time.Time" {
+			return typeGenInfo{
+				TypeName:      "time.Time",
+				Marshaler:     "bstd.MarshalTime",
+				Unmarshaler:   "bstd.UnmarshalTime",
+				TestGenerator: "btst.GenerateTime",
+				TestComparer:  "btst.ComparePrimitive[time.Time]",
+				IsFixedSize:   true,
+			}
+		}
+		// Fallback for imported types
+		return typeGenInfo{
+			TypeName:      sel,
+			TestGenerator: fmt.Sprintf("func(r *rand.Rand, d int) %s { return *new(%s) /* External generator not implemented */ }", sel, sel),
+			TestComparer:  fmt.Sprintf("btst.ComparePrimitive[%s]", sel),
 		}
 
 	case *ast.ArrayType:
@@ -279,28 +307,23 @@ func (g *Generator) getTypeInfo(expr ast.Expr) typeGenInfo {
 			TestComparer:  fmt.Sprintf("func(a, b %s) error { return btst.CompareMap(a, b, %s) }", typeName, valInfo.TestComparer),
 		}
 	}
-	log.Printf("unhandled type in getTypeInfo: %T", expr)
-	return typeGenInfo{}
+	return typeGenInfo{TypeName: typeName}
 }
 
-// getSizeExpr recursively builds the Go expression string to calculate the marshalled size of a variable.
 func (g *Generator) getSizeExpr(expr ast.Expr, varName string) string {
 	typeName := g.exprToString(expr)
-	// If the type is a custom struct or map alias, call its .Size() method.
+
 	if ts, ok := g.typeSpecs[typeName]; ok {
-		// For map aliases, we must prevent infinite recursion when generating the method body itself.
-		// A simple heuristic is to check if the varName is the receiver of the method.
 		if _, isMap := ts.Type.(*ast.MapType); isMap {
 			receiverName := strings.ToLower(typeName[:1]) + typeName[1:]
-			if varName == "*"+receiverName {
-				// This is the method body for the alias itself, so fall through to generate the map logic directly.
-			} else {
+			if varName != "*"+receiverName {
 				return fmt.Sprintf("%s.Size()", varName)
 			}
 		} else {
 			return fmt.Sprintf("%s.Size()", varName)
 		}
 	}
+
 	if ident, ok := expr.(*ast.Ident); ok {
 		if _, ok := g.typeSpecs[ident.Name]; ok {
 			return fmt.Sprintf("%s.Size()", varName)
@@ -313,8 +336,7 @@ func (g *Generator) getSizeExpr(expr ast.Expr, varName string) string {
 		sizer := "bstd.Size" + strings.Title(info.TypeName)
 		if info.TypeName == "byte" {
 			sizer = "bstd.SizeByte"
-		}
-		if info.TypeName == "rune" {
+		} else if info.TypeName == "rune" {
 			sizer = "bstd.SizeInt32"
 		}
 
@@ -323,46 +345,51 @@ func (g *Generator) getSizeExpr(expr ast.Expr, varName string) string {
 		}
 		return fmt.Sprintf("%s(%s)", sizer, varName)
 
+	case *ast.StarExpr:
+		eltSizer := fmt.Sprintf("func(v %s) int { return %s }", g.exprToString(t.X), g.getSizeExpr(t.X, "v"))
+		return fmt.Sprintf("bstd.SizePointer(%s, %s)", varName, eltSizer)
+
+	case *ast.SelectorExpr:
+		sel := g.exprToString(t)
+		if sel == "time.Time" {
+			return "bstd.SizeTime()"
+		}
+		return fmt.Sprintf("%s.Size()", varName)
+
 	case *ast.ArrayType:
 		eltInfo := g.getTypeInfo(t.Elt)
-		// Special, efficient handling for []byte.
 		if eltInfo.TypeName == "byte" {
 			return fmt.Sprintf("bstd.SizeBytes(%s)", varName)
 		}
-		// Recursively generate the sizer function for the element type.
 		eltSizer := fmt.Sprintf("func(v %s) int { return %s }", eltInfo.TypeName, g.getSizeExpr(t.Elt, "v"))
 		return fmt.Sprintf("bstd.SizeSlice(%s, %s)", varName, eltSizer)
 
 	case *ast.MapType:
 		keyInfo := g.getTypeInfo(t.Key)
 		valInfo := g.getTypeInfo(t.Value)
-		// Recursively generate sizers for key and value types.
 		keySizer := fmt.Sprintf("func(k %s) int { return %s }", keyInfo.TypeName, g.getSizeExpr(t.Key, "k"))
 		valSizer := fmt.Sprintf("func(v %s) int { return %s }", valInfo.TypeName, g.getSizeExpr(t.Value, "v"))
 		return fmt.Sprintf("bstd.SizeMap(%s, %s, %s)", varName, keySizer, valSizer)
 
 	default:
-		log.Printf("unhandled type in getSizeExpr: %T", expr)
 		return fmt.Sprintf("0 /* unhandled type %T */", expr)
 	}
 }
 
-// getMarshalExpr recursively builds the Go expression string to marshal a variable.
 func (g *Generator) getMarshalExpr(expr ast.Expr, n, buf, varName string) string {
 	typeName := g.exprToString(expr)
-	// If the type is a custom struct or map alias, call its .Marshal() method.
+
 	if ts, ok := g.typeSpecs[typeName]; ok {
 		if _, isMap := ts.Type.(*ast.MapType); isMap {
 			receiverName := strings.ToLower(typeName[:1]) + typeName[1:]
-			if varName == "*"+receiverName {
-				// fallthrough
-			} else {
+			if varName != "*"+receiverName {
 				return fmt.Sprintf("%s.Marshal(%s, %s)", varName, n, buf)
 			}
 		} else {
 			return fmt.Sprintf("%s.Marshal(%s, %s)", varName, n, buf)
 		}
 	}
+
 	if ident, ok := expr.(*ast.Ident); ok {
 		if _, ok := g.typeSpecs[ident.Name]; ok {
 			return fmt.Sprintf("%s.Marshal(%s, %s)", varName, n, buf)
@@ -374,12 +401,24 @@ func (g *Generator) getMarshalExpr(expr ast.Expr, n, buf, varName string) string
 	case *ast.Ident:
 		return fmt.Sprintf("%s(%s, %s, %s)", info.Marshaler, n, buf, varName)
 
+	case *ast.StarExpr:
+		eltType := g.exprToString(t.X)
+		eltMarshalFn := fmt.Sprintf("func(n int, b []byte, v %s) int { return %s }",
+			eltType, g.getMarshalExpr(t.X, "n", "b", "v"))
+		return fmt.Sprintf("bstd.MarshalPointer(%s, %s, %s, %s)", n, buf, varName, eltMarshalFn)
+
+	case *ast.SelectorExpr:
+		sel := g.exprToString(t)
+		if sel == "time.Time" {
+			return fmt.Sprintf("bstd.MarshalTime(%s, %s, %s)", n, buf, varName)
+		}
+		return fmt.Sprintf("%s.Marshal(%s, %s)", varName, n, buf)
+
 	case *ast.ArrayType:
 		eltInfo := g.getTypeInfo(t.Elt)
 		if eltInfo.TypeName == "byte" {
 			return fmt.Sprintf("bstd.MarshalBytes(%s, %s, %s)", n, buf, varName)
 		}
-		// Recursively generate the marshaler function for the element type.
 		eltMarshaler := fmt.Sprintf("func(n int, b []byte, v %s) int { return %s }",
 			eltInfo.TypeName, g.getMarshalExpr(t.Elt, "n", "b", "v"))
 		return fmt.Sprintf("bstd.MarshalSlice(%s, %s, %s, %s)", n, buf, varName, eltMarshaler)
@@ -387,7 +426,6 @@ func (g *Generator) getMarshalExpr(expr ast.Expr, n, buf, varName string) string
 	case *ast.MapType:
 		keyInfo := g.getTypeInfo(t.Key)
 		valInfo := g.getTypeInfo(t.Value)
-		// Recursively generate marshalers for key and value types.
 		keyMarshaler := fmt.Sprintf("func(n int, b []byte, k %s) int { return %s }",
 			keyInfo.TypeName, g.getMarshalExpr(t.Key, "n", "b", "k"))
 		valMarshaler := fmt.Sprintf("func(n int, b []byte, v %s) int { return %s }",
@@ -395,27 +433,24 @@ func (g *Generator) getMarshalExpr(expr ast.Expr, n, buf, varName string) string
 		return fmt.Sprintf("bstd.MarshalMap(%s, %s, %s, %s, %s)", n, buf, varName, keyMarshaler, valMarshaler)
 
 	default:
-		log.Printf("unhandled type in getMarshalExpr: %T", expr)
 		return n
 	}
 }
 
-// getUnmarshalExpr recursively builds the Go expression string to unmarshal a variable.
 func (g *Generator) getUnmarshalExpr(expr ast.Expr, n, buf, varName string) string {
 	typeName := g.exprToString(expr)
-	// If the type is a custom struct or map alias, call its .Unmarshal() method.
+
 	if ts, ok := g.typeSpecs[typeName]; ok {
 		if _, isMap := ts.Type.(*ast.MapType); isMap {
 			receiverName := strings.ToLower(typeName[:1]) + typeName[1:]
-			if varName == "*"+receiverName {
-				// fallthrough
-			} else {
+			if varName != "*"+receiverName {
 				return fmt.Sprintf("n, err = %s.Unmarshal(%s, %s)", varName, n, buf)
 			}
 		} else {
 			return fmt.Sprintf("n, err = %s.Unmarshal(%s, %s)", varName, n, buf)
 		}
 	}
+
 	if ident, ok := expr.(*ast.Ident); ok {
 		if _, ok := g.typeSpecs[ident.Name]; ok {
 			return fmt.Sprintf("n, err = %s.Unmarshal(%s, %s)", varName, n, buf)
@@ -427,13 +462,25 @@ func (g *Generator) getUnmarshalExpr(expr ast.Expr, n, buf, varName string) stri
 	case *ast.Ident:
 		return fmt.Sprintf("n, %s, err = %s(%s, %s)", varName, info.Unmarshaler, n, buf)
 
+	case *ast.StarExpr:
+		eltType := g.exprToString(t.X)
+		eltUnmarshalFn := fmt.Sprintf("func(n int, b []byte, v *%s) (int, error) { %s; return n, err }",
+			eltType, g.getUnmarshalExpr(t.X, "n", "b", "(*v)"))
+		return fmt.Sprintf("n, %s, err = bstd.UnmarshalPointer[%s](%s, %s, %s)",
+			varName, eltType, n, buf, eltUnmarshalFn)
+
+	case *ast.SelectorExpr:
+		sel := g.exprToString(t)
+		if sel == "time.Time" {
+			return fmt.Sprintf("n, %s, err = bstd.UnmarshalTime(%s, %s)", varName, n, buf)
+		}
+		return fmt.Sprintf("n, err = %s.Unmarshal(%s, %s)", varName, n, buf)
+
 	case *ast.ArrayType:
 		eltInfo := g.getTypeInfo(t.Elt)
 		if eltInfo.TypeName == "byte" {
 			return fmt.Sprintf("n, %s, err = bstd.UnmarshalBytesCopied(%s, %s)", varName, n, buf)
 		}
-		// Generate the unmarshaler function for the element type.
-		// Note the `(*v)` which is required because `UnmarshalSlice` passes a pointer to the element.
 		eltUnmarshaler := fmt.Sprintf("func(n int, b []byte, v *%s) (int, error) { %s; return n, err }",
 			eltInfo.TypeName, g.getUnmarshalExpr(t.Elt, "n", "b", "(*v)"))
 		unmarshalCall := fmt.Sprintf("bstd.UnmarshalSlice[%s](%s, %s, %s)", eltInfo.TypeName, n, buf, eltUnmarshaler)
@@ -442,7 +489,6 @@ func (g *Generator) getUnmarshalExpr(expr ast.Expr, n, buf, varName string) stri
 	case *ast.MapType:
 		keyInfo := g.getTypeInfo(t.Key)
 		valInfo := g.getTypeInfo(t.Value)
-		// Generate unmarshaler lambdas for key and value types.
 		keyUnmarshaler := fmt.Sprintf("func(n int, b []byte, k *%s) (int, error) { %s; return n, err }",
 			keyInfo.TypeName, g.getUnmarshalExpr(t.Key, "n", "b", "(*k)"))
 		valUnmarshaler := fmt.Sprintf("func(n int, b []byte, v *%s) (int, error) { %s; return n, err }",
@@ -452,7 +498,6 @@ func (g *Generator) getUnmarshalExpr(expr ast.Expr, n, buf, varName string) stri
 		return fmt.Sprintf("n, %s, err = %s", varName, unmarshalCall)
 
 	default:
-		log.Printf("unhandled type in getUnmarshalExpr: %T", expr)
 		return fmt.Sprintf("n, %s, err = %s(%s, %s)", varName, info.Unmarshaler, n, buf)
 	}
 }
@@ -472,7 +517,6 @@ func (g *Generator) generateTestGenerator(ts *ast.TypeSpec) {
 			}
 			for _, fName := range field.Names {
 				gen := g.getTypeInfo(field.Type).TestGenerator
-				// Handle lambda functions for generators of complex types (slices, maps).
 				if strings.HasPrefix(gen, "func") {
 					gen = fmt.Sprintf("(%s)(r, depth-1)", gen)
 				} else {
@@ -484,10 +528,9 @@ func (g *Generator) generateTestGenerator(ts *ast.TypeSpec) {
 		g.printf("\t}\n")
 	case *ast.MapType, *ast.ArrayType:
 		if g.isUnsupportedType(ts.Type) {
-			g.printf("\treturn nil\n") // Return nil/zero value for unsupported alias types
+			g.printf("\treturn nil\n")
 		} else {
 			gen := g.getTypeInfo(ts.Type).TestGenerator
-			// Wrap lambda for immediate execution.
 			g.printf("\treturn (%s)(r, depth-1)\n", gen)
 		}
 	default:
@@ -512,9 +555,9 @@ func (g *Generator) generateTestComparer(ts *ast.TypeSpec) {
 			}
 		}
 		g.printf("\treturn nil\n")
-	default: // Handles map aliases and other types
+	default:
 		if g.isUnsupportedType(t) {
-			g.printf("\treturn nil // Type is unsupported\n")
+			g.printf("\treturn nil\n")
 		} else {
 			comparer := g.getTypeInfo(t).TestComparer
 			g.printf("\treturn %s(a, b)\n", comparer)
@@ -566,7 +609,6 @@ func (g *Generator) printf(format string, args ...interface{}) {
 func (g *Generator) format() (string, error) {
 	src, err := format.Source(g.buf.Bytes())
 	if err != nil {
-		// If formatting fails, return the unformatted source with the error for debugging.
 		log.Printf("---BEGIN FAILED SOURCE---\n%s\n---END FAILED SOURCE---", g.buf.String())
 		return "", fmt.Errorf("failed to format generated code: %w", err)
 	}
@@ -620,20 +662,18 @@ func main() {
 	log.Printf("Successfully generated %s", outputTestFileName)
 }
 
-// collectTypes gathers all type declarations for structs and map aliases.
 func collectTypes(node *ast.File) []*ast.TypeSpec {
 	var types []*ast.TypeSpec
 	ast.Inspect(node, func(n ast.Node) bool {
 		ts, ok := n.(*ast.TypeSpec)
 		if !ok {
-			return true // Continue inspection
+			return true
 		}
-		// We are interested in struct types and type aliases for map types.
 		switch ts.Type.(type) {
 		case *ast.StructType, *ast.MapType:
 			types = append(types, ts)
 		}
-		return false // Do not inspect inside the type spec
+		return false
 	})
 	return types
 }
