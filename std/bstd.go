@@ -7,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/deneonet/benc"
+	"github.com/banditmoscow1337/benc"
 	"golang.org/x/exp/constraints"
 )
 
