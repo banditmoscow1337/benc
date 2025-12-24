@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/banditmoscow1337/benc"
 )
 
 func SizeAll(sizers ...func() int) (s int) {
@@ -223,7 +221,7 @@ func TestErrBufTooSmall(t *testing.T) {
 		{}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7}, {}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7},
 		{}, {2, 0}, {4, 1, 2, 3}, {8, 1, 2, 3, 4, 5, 6, 7},
 	}
-	if err := UnmarshalAll_VerifyError(benc.ErrBufTooSmall, buffers,
+	if err := UnmarshalAll_VerifyError(ErrBufTooSmall, buffers,
 		func(n int, b []byte) (int, any, error) { return UnmarshalBool(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalByte(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalFloat32(n, b) },
@@ -276,7 +274,7 @@ func TestErrBufTooSmall(t *testing.T) {
 	skipSliceOfBytes := func(n int, b []byte) (int, error) { return SkipSlice(n, b, SkipByte) }
 	skipMapOfBytes := func(n int, b []byte) (int, error) { return SkipMap(n, b, SkipByte, SkipByte) }
 
-	if err := SkipAll_VerifyError(benc.ErrBufTooSmall, buffers,
+	if err := SkipAll_VerifyError(ErrBufTooSmall, buffers,
 		SkipBool, SkipByte, SkipFloat32, SkipFloat64, SkipVarint, SkipInt8, SkipInt16, SkipInt32, SkipInt64,
 		SkipVarint, SkipUint16, SkipUint32, SkipUint64, SkipString, SkipString, SkipString, SkipString,
 		SkipString, SkipString, SkipString, SkipString, SkipBytes, SkipBytes, SkipBytes, SkipBytes,
@@ -289,7 +287,7 @@ func TestErrBufTooSmall(t *testing.T) {
 
 func TestErrBufTooSmall_2(t *testing.T) {
 	buffers := [][]byte{{}, {2, 0}, {}, {2, 0}, {}, {2, 0}, {}, {10, 0, 0, 0, 1}, {}, {10, 0, 0, 0, 1}, {}, {10, 0, 0, 0, 1}}
-	if err := UnmarshalAll_VerifyError(benc.ErrBufTooSmall, buffers,
+	if err := UnmarshalAll_VerifyError(ErrBufTooSmall, buffers,
 		func(n int, b []byte) (int, any, error) { return UnmarshalString(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalString(n, b) },
 		func(n int, b []byte) (int, any, error) { return UnmarshalUnsafeString(n, b) },
@@ -312,7 +310,7 @@ func TestErrBufTooSmall_2(t *testing.T) {
 
 	skipSliceOfBytes := func(n int, b []byte) (int, error) { return SkipSlice(n, b, SkipByte) }
 	skipMapOfBytes := func(n int, b []byte) (int, error) { return SkipMap(n, b, SkipByte, SkipByte) }
-	if err := SkipAll_VerifyError(benc.ErrBufTooSmall, buffers, SkipString, SkipString, SkipString, SkipString, SkipBytes, SkipBytes, SkipBytes, SkipBytes, skipSliceOfBytes, skipSliceOfBytes, skipMapOfBytes, skipMapOfBytes); err != nil {
+	if err := SkipAll_VerifyError(ErrBufTooSmall, buffers, SkipString, SkipString, SkipString, SkipString, SkipBytes, SkipBytes, SkipBytes, SkipBytes, skipSliceOfBytes, skipSliceOfBytes, skipMapOfBytes, skipMapOfBytes); err != nil {
 		t.Fatal(err.Error())
 	}
 }
@@ -491,9 +489,9 @@ func TestSkipVarint(t *testing.T) {
 	}{
 		{"Valid single-byte varint", []byte{0x05}, 0, 1, nil},
 		{"Valid multi-byte varint", []byte{0x80, 0x01}, 0, 2, nil},
-		{"Buffer too small", []byte{0x80}, 0, 0, benc.ErrBufTooSmall},
-		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, benc.ErrOverflow},
-		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, benc.ErrOverflow},
+		{"Buffer too small", []byte{0x80}, 0, 0, ErrBufTooSmall},
+		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, ErrOverflow},
+		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, ErrOverflow},
 	}
 
 	for _, tt := range tests {
@@ -525,9 +523,9 @@ func TestUnmarshalInt(t *testing.T) {
 		{"Valid small int", []byte{0x02}, 0, 1, 1, nil},
 		{"Valid negative int", []byte{0x03}, 0, 1, -2, nil},
 		{"Valid multi-byte int", []byte{0xAC, 0x02}, 0, 2, 150, nil},
-		{"Buffer too small", []byte{0x80}, 0, 0, 0, benc.ErrBufTooSmall},
-		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, 0, benc.ErrOverflow},
-		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, 0, benc.ErrOverflow},
+		{"Buffer too small", []byte{0x80}, 0, 0, 0, ErrBufTooSmall},
+		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, 0, ErrOverflow},
+		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, 0, ErrOverflow},
 	}
 
 	for _, tt := range tests {
@@ -632,9 +630,9 @@ func TestUnmarshalUint(t *testing.T) {
 	}{
 		{"Valid small uint", []byte{0x07}, 0, 1, 7, nil},
 		{"Valid multi-byte uint", []byte{0xAC, 0x02}, 0, 2, 300, nil},
-		{"Buffer too small", []byte{0x80}, 0, 0, 0, benc.ErrBufTooSmall},
-		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, 0, benc.ErrOverflow},
-		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, 0, benc.ErrOverflow},
+		{"Buffer too small", []byte{0x80}, 0, 0, 0, ErrBufTooSmall},
+		{"Varint overflow", []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 0, 0, 0, ErrOverflow},
+		{"Varint overflow edge case", overflowEdgeCaseBytes, 0, 0, 0, ErrOverflow},
 	}
 
 	for _, tt := range tests {
@@ -657,8 +655,8 @@ func TestTerminatorErrors(t *testing.T) {
 		truncatedBuf := buf[:s-1]
 
 		_, err := SkipSlice(0, truncatedBuf, SkipString)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
-			t.Errorf("Expected %v, got %v", benc.ErrBufTooSmall, err)
+		if !errors.Is(err, ErrBufTooSmall) {
+			t.Errorf("Expected %v, got %v", ErrBufTooSmall, err)
 		}
 	})
 	t.Run("SkipMapTerminator", func(t *testing.T) {
@@ -669,8 +667,8 @@ func TestTerminatorErrors(t *testing.T) {
 		truncatedBuf := buf[:s-1]
 
 		_, err := SkipMap(0, truncatedBuf, SkipString, SkipString)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
-			t.Errorf("Expected %v, got %v", benc.ErrBufTooSmall, err)
+		if !errors.Is(err, ErrBufTooSmall) {
+			t.Errorf("Expected %v, got %v", ErrBufTooSmall, err)
 		}
 	})
 }
@@ -736,7 +734,7 @@ func TestFinalCoverage(t *testing.T) {
 
 		// Cover error path
 		_, _, err = UnmarshalSlice[int32](0, []byte{1, 1, 2, 3}, unmarshalInt32AsPointer)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall, got %v", err)
 		}
 	})
@@ -773,11 +771,11 @@ func TestFinalCoverage(t *testing.T) {
 
 		// Cover error paths
 		_, _, err = UnmarshalMap[int16, int32](0, []byte{1}, unmarshalInt16Ptr, unmarshalInt32Ptr) // Key fails
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall for key, got %v", err)
 		}
 		_, _, err = UnmarshalMap[int16, int32](0, []byte{1, 0, 0}, unmarshalInt16Ptr, unmarshalInt32Ptr) // Value fails
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall for value, got %v", err)
 		}
 	})
@@ -785,7 +783,7 @@ func TestFinalCoverage(t *testing.T) {
 	// Covers error path in UnmarshalTime
 	t.Run("UnmarshalTimeError", func(t *testing.T) {
 		_, _, err := UnmarshalTime(0, []byte{1, 2, 3})
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall, got %v", err)
 		}
 	})
@@ -793,7 +791,7 @@ func TestFinalCoverage(t *testing.T) {
 	// Covers error path in SkipPointer
 	t.Run("SkipPointerError", func(t *testing.T) {
 		_, err := SkipPointer(0, []byte{}, SkipByte)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall, got %v", err)
 		}
 	})
@@ -801,12 +799,12 @@ func TestFinalCoverage(t *testing.T) {
 	// Covers all error paths in UnmarshalPointer
 	t.Run("UnmarshalPointerErrors", func(t *testing.T) {
 		_, _, err := UnmarshalPointer[int](0, []byte{}, UnmarshalInt)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall from UnmarshalBool, got %v", err)
 		}
 
 		_, _, err = UnmarshalPointer[int](0, []byte{1, 0x80}, UnmarshalInt)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall from element unmarshaler, got %v", err)
 		}
 
@@ -815,7 +813,7 @@ func TestFinalCoverage(t *testing.T) {
 			return newN, err
 		}
 		_, _, err = UnmarshalPointer[int](0, []byte{1, 0x80}, unmarshalAsPointer)
-		if !errors.Is(err, benc.ErrBufTooSmall) {
+		if !errors.Is(err, ErrBufTooSmall) {
 			t.Errorf("expected ErrBufTooSmall from pointer-based element unmarshaler, got %v", err)
 		}
 	})

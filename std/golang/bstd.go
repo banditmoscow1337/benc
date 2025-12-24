@@ -2,14 +2,21 @@ package bstd
 
 import (
 	"encoding/binary"
+	"errors"
 	"math"
 	"strconv"
 	"time"
 	"unsafe"
 
-	"github.com/banditmoscow1337/benc"
 	"golang.org/x/exp/constraints"
 )
+
+var ErrBufTooSmall = errors.New("buffer too small")
+var ErrReuseBufTooSmall = errors.New("reuse buffer too small")
+var ErrOverflow = errors.New("varint overflows a 64-bit integer")
+var ErrVerifyUnmarshal = errors.New("check for a mistake in the unmarshal process")
+var ErrVerifyMarshal = errors.New("check for a mistake in calculating the size or in the marshal process")
+
 
 type SizeFunc[T any] func(t T) int
 type MarshalFunc[T any] func(n int, b []byte, t T) int
@@ -18,8 +25,8 @@ type MarshalFunc[T any] func(n int, b []byte, t T) int
 // For unsafe string unmarshalling too.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled string.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled string.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipString(n int, b []byte) (int, error) {
@@ -30,7 +37,7 @@ func SkipString(n int, b []byte) (int, error) {
 	s := int(us)
 
 	if len(b)-n < s {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + s, nil
 }
@@ -53,8 +60,8 @@ func MarshalString(n int, b []byte, str string) int {
 // Returns the new offset 'n', as well as the string, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalString(n int, b []byte) (int, string, error) {
@@ -65,7 +72,7 @@ func UnmarshalString(n int, b []byte) (int, string, error) {
 	s := int(us)
 
 	if len(b)-n < s {
-		return n, "", benc.ErrBufTooSmall
+		return n, "", ErrBufTooSmall
 	}
 	return n + s, string(b[n : n+s]), nil
 }
@@ -115,8 +122,8 @@ func MarshalUnsafeString(n int, b []byte, str string) int {
 // Uses unsafe operations to convert the bytes to a string.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalUnsafeString(n int, b []byte) (int, string, error) {
@@ -130,7 +137,7 @@ func UnmarshalUnsafeString(n int, b []byte) (int, string, error) {
 	}
 
 	if len(b)-n < s {
-		return n, "", benc.ErrBufTooSmall
+		return n, "", ErrBufTooSmall
 	}
 	return n + s, b2s(b[n : n+s]), nil
 }
@@ -138,7 +145,7 @@ func UnmarshalUnsafeString(n int, b []byte) (int, string, error) {
 // Returns the new offset 'n' after skipping the marshalled slice.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled slice.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 // It now accepts a skipper function to correctly skip each element and much faster on large sets.
@@ -159,7 +166,7 @@ func SkipSlice(n int, b []byte, skipElement func(n int, b []byte) (int, error)) 
 
 	// 3. Finally, skip the 4-byte terminator.
 	if len(b)-n < 4 {
-		return 0, benc.ErrBufTooSmall
+		return 0, ErrBufTooSmall
 	}
 	return n + 4, nil
 }
@@ -204,8 +211,8 @@ func MarshalSlice[T any](n int, b []byte, slice []T, marshaler MarshalFunc[T]) i
 // Returns the new offset 'n', as well as the slice, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalSlice[T any](n int, b []byte, unmarshaler interface{}) (int, []T, error) {
@@ -245,7 +252,7 @@ func UnmarshalSlice[T any](n int, b []byte, unmarshaler interface{}) (int, []T, 
 // Returns the new offset 'n' after skipping the marshalled map.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled map.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled map.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 // It now accepts a skipper function to correctly skip each element and much faster on large sets.
@@ -272,7 +279,7 @@ func SkipMap(n int, b []byte, skipKey func(n int, b []byte) (int, error), skipVa
 
 	// 3. Finally, skip the 4-byte terminator.
 	if len(b)-n < 4 {
-		return 0, benc.ErrBufTooSmall
+		return 0, ErrBufTooSmall
 	}
 	return n + 4, nil
 }
@@ -325,8 +332,8 @@ func MarshalMap[K comparable, V any](n int, b []byte, m map[K]V, kMarshaler Mars
 // Returns the new offset 'n', as well as the map, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the map.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the map.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalMap[K comparable, V any](n int, b []byte, kUnmarshaler interface{}, vUnmarshaler interface{}) (int, map[K]V, error) {
@@ -381,12 +388,12 @@ func UnmarshalMap[K comparable, V any](n int, b []byte, kUnmarshaler interface{}
 // Returns the new offset 'n' after skipping the marshalled byte.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled byte.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled byte.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipByte(n int, b []byte) (int, error) {
 	if len(b)-n < 1 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 1, nil
 }
@@ -407,12 +414,12 @@ func MarshalByte(n int, b []byte, byt byte) int {
 // Returns the new offset 'n', as well as the byte, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the byte.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the byte.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalByte(n int, b []byte) (int, byte, error) {
 	if len(b)-n < 1 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	return n + 1, b[n], nil
 }
@@ -420,8 +427,8 @@ func UnmarshalByte(n int, b []byte) (int, byte, error) {
 // Returns the new offset 'n' after skipping the marshalled byte slice.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled byte slice.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled byte slice.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipBytes(n int, b []byte) (int, error) {
@@ -431,7 +438,7 @@ func SkipBytes(n int, b []byte) (int, error) {
 	}
 	s := int(us)
 	if len(b)-n < s {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + s, nil
 }
@@ -453,8 +460,8 @@ func MarshalBytes(n int, b []byte, bs []byte) int {
 // UnmarshalBytesCopied returns a new allocated slice with a copy of the marshalled byte slice inside `b`.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer.
 //
 // It's slower than UnmarshalBytesCropped, but modifications to `b` won't affect the returned byte slice.
 func UnmarshalBytesCopied(n int, b []byte) (int, []byte, error) {
@@ -464,7 +471,7 @@ func UnmarshalBytesCopied(n int, b []byte) (int, []byte, error) {
 	}
 	s := int(us)
 	if len(b)-n < s {
-		return 0, nil, benc.ErrBufTooSmall
+		return 0, nil, ErrBufTooSmall
 	}
 	cb := make([]byte, s)
 	copy(cb, b[n:n+s])
@@ -474,8 +481,8 @@ func UnmarshalBytesCopied(n int, b []byte) (int, []byte, error) {
 // UnmarshalBytesCropped returns a cropped slice of the marshalled byte slice inside `b`.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer.
 //
 // It's faster than UnmarshalBytesCopied, but modifications to `b` will affect the returned byte slice.
 func UnmarshalBytesCropped(n int, b []byte) (int, []byte, error) {
@@ -485,7 +492,7 @@ func UnmarshalBytesCropped(n int, b []byte) (int, []byte, error) {
 	}
 	s := int(us)
 	if len(b)-n < s {
-		return 0, nil, benc.ErrBufTooSmall
+		return 0, nil, ErrBufTooSmall
 	}
 	return n + s, b[n : n+s], nil
 }
@@ -500,23 +507,23 @@ var maxVarintLen = maxVarintLenMap[strconv.IntSize]
 // Returns the new offset 'n' after skipping the marshalled varint.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to skip the marshalled varint.
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer.
+//   - ErrBufTooSmall       - 'buf' was too small to skip the marshalled varint.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipVarint(n int, buf []byte) (int, error) {
 	for i, b := range buf[n:] {
 		if i == maxVarintLen {
-			return 0, benc.ErrOverflow
+			return 0, ErrOverflow
 		}
 		if b < 0x80 {
 			if i == maxVarintLen-1 && b > 1 {
-				return 0, benc.ErrOverflow
+				return 0, ErrOverflow
 			}
 			return n + i + 1, nil
 		}
 	}
-	return 0, benc.ErrBufTooSmall
+	return 0, ErrBufTooSmall
 }
 
 // Returns the bytes needed to marshal a integer.
@@ -548,8 +555,8 @@ func MarshalInt(n int, b []byte, sv int) int {
 // Returns the new offset 'n', as well as the integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit integer.
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the integer.
+//   - ErrOverflow          - varint overflowed a N-bit integer.
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalInt(n int, buf []byte) (int, int, error) {
@@ -557,18 +564,18 @@ func UnmarshalInt(n int, buf []byte) (int, int, error) {
 	var s uint
 	for i, b := range buf[n:] {
 		if i == maxVarintLen {
-			return 0, 0, benc.ErrOverflow
+			return 0, 0, ErrOverflow
 		}
 		if b < 0x80 {
 			if i == maxVarintLen-1 && b > 1 {
-				return 0, 0, benc.ErrOverflow
+				return 0, 0, ErrOverflow
 			}
 			return n + i + 1, int(decodeZigZag(x | uint(b)<<s)), nil
 		}
 		x |= uint(b&0x7f) << s
 		s += 7
 	}
-	return 0, 0, benc.ErrBufTooSmall
+	return 0, 0, ErrBufTooSmall
 }
 
 // Returns the bytes needed to marshal a unsigned integer.
@@ -598,8 +605,8 @@ func MarshalUint(n int, b []byte, v uint) int {
 // Returns the new offset 'n', as well as the unsigned integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrOverflow          - varint overflowed a N-bit unsigned integer
-//   - benc.ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer//
+//   - ErrOverflow          - varint overflowed a N-bit unsigned integer
+//   - ErrBufTooSmall       - 'buf' was too small to unmarshal the unsigned integer//
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalUint(n int, buf []byte) (int, uint, error) {
@@ -607,29 +614,29 @@ func UnmarshalUint(n int, buf []byte) (int, uint, error) {
 	var s uint
 	for i, b := range buf[n:] {
 		if i == maxVarintLen {
-			return 0, 0, benc.ErrOverflow
+			return 0, 0, ErrOverflow
 		}
 		if b < 0x80 {
 			if i == maxVarintLen-1 && b > 1 {
-				return 0, 0, benc.ErrOverflow
+				return 0, 0, ErrOverflow
 			}
 			return n + i + 1, x | uint(b)<<s, nil
 		}
 		x |= uint(b&0x7f) << s
 		s += 7
 	}
-	return 0, 0, benc.ErrBufTooSmall
+	return 0, 0, ErrBufTooSmall
 }
 
 // Returns the new offset 'n' after skipping the marshalled 64-bit unsigned integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipUint64(n int, b []byte) (int, error) {
 	if len(b)-n < 8 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 8, nil
 }
@@ -657,12 +664,12 @@ func MarshalUint64(n int, b []byte, v uint64) int {
 // Returns the new offset 'n', as well as the 64-bit unsigned integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalUint64(n int, b []byte) (int, uint64, error) {
 	if len(b)-n < 8 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+8]
 	_ = u[7]
@@ -674,12 +681,12 @@ func UnmarshalUint64(n int, b []byte) (int, uint64, error) {
 // Returns the new offset 'n' after skipping the marshalled 32-bit unsigned integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipUint32(n int, b []byte) (int, error) {
 	if len(b)-n < 4 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 4, nil
 }
@@ -703,12 +710,12 @@ func MarshalUint32(n int, b []byte, v uint32) int {
 // Returns the new offset 'n', as well as the 32-bit unsigned integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalUint32(n int, b []byte) (int, uint32, error) {
 	if len(b)-n < 4 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+4]
 	_ = u[3]
@@ -719,12 +726,12 @@ func UnmarshalUint32(n int, b []byte) (int, uint32, error) {
 // Returns the new offset 'n' after skipping the marshalled 16-bit unsigned integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipUint16(n int, b []byte) (int, error) {
 	if len(b)-n < 2 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 2, nil
 }
@@ -746,12 +753,12 @@ func MarshalUint16(n int, b []byte, v uint16) int {
 // Returns the new offset 'n', as well as the 16-bit unsigned integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 16-bit unsigned integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 16-bit unsigned integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalUint16(n int, b []byte) (int, uint16, error) {
 	if len(b)-n < 2 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+2]
 	_ = u[1]
@@ -762,12 +769,12 @@ func UnmarshalUint16(n int, b []byte) (int, uint16, error) {
 // Returns the new offset 'n' after skipping the marshalled 64-bit integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipInt64(n int, b []byte) (int, error) {
 	if len(b)-n < 8 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 8, nil
 }
@@ -795,12 +802,12 @@ func MarshalInt64(n int, b []byte, v int64) int {
 // Returns the new offset 'n', as well as the 64-bit integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalInt64(n int, b []byte) (int, int64, error) {
 	if len(b)-n < 8 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+8]
 	_ = u[7]
@@ -812,12 +819,12 @@ func UnmarshalInt64(n int, b []byte) (int, int64, error) {
 // Returns the new offset 'n' after skipping the marshalled 32-bit integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipInt32(n int, b []byte) (int, error) {
 	if len(b)-n < 4 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 4, nil
 }
@@ -841,12 +848,12 @@ func MarshalInt32(n int, b []byte, v int32) int {
 // Returns the new offset 'n', as well as the 32-bit integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalInt32(n int, b []byte) (int, int32, error) {
 	if len(b)-n < 4 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+4]
 	_ = u[3]
@@ -857,12 +864,12 @@ func UnmarshalInt32(n int, b []byte) (int, int32, error) {
 // Returns the new offset 'n' after skipping the marshalled 16-bit integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipInt16(n int, b []byte) (int, error) {
 	if len(b)-n < 2 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 2, nil
 }
@@ -884,12 +891,12 @@ func MarshalInt16(n int, b []byte, v int16) int {
 // Returns the new offset 'n', as well as the 16-bit integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 16-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 16-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalInt16(n int, b []byte) (int, int16, error) {
 	if len(b)-n < 2 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+2]
 	_ = u[1]
@@ -900,7 +907,7 @@ func UnmarshalInt16(n int, b []byte) (int, int16, error) {
 // Returns the new offset 'n' after skipping the marshalled 8-bit integer.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 16-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipInt8(n int, b []byte) (int, error) {
@@ -920,7 +927,7 @@ func MarshalInt8(n int, b []byte, v int8) int {
 // Returns the new offset 'n', as well as the 8-bit integer, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 8-bit integer.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 8-bit integer.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalInt8(n int, b []byte) (int, int8, error) {
@@ -935,12 +942,12 @@ func UnmarshalInt8(n int, b []byte) (int, int8, error) {
 // Returns the new offset 'n' after skipping the marshalled 64-bit float.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit float.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 64-bit float.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipFloat64(n int, b []byte) (int, error) {
 	if len(b)-n < 8 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 8, nil
 }
@@ -969,12 +976,12 @@ func MarshalFloat64(n int, b []byte, v float64) int {
 // Returns the new offset 'n', as well as the 64-bit float, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit float.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 64-bit float.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalFloat64(n int, b []byte) (int, float64, error) {
 	if len(b)-n < 8 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+8]
 	_ = u[7]
@@ -986,12 +993,12 @@ func UnmarshalFloat64(n int, b []byte) (int, float64, error) {
 // Returns the new offset 'n' after skipping the marshalled 32-bit float.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit float.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled 32-bit float.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipFloat32(n int, b []byte) (int, error) {
 	if len(b)-n < 4 {
-		return n, benc.ErrBufTooSmall
+		return n, ErrBufTooSmall
 	}
 	return n + 4, nil
 }
@@ -1016,12 +1023,12 @@ func MarshalFloat32(n int, b []byte, v float32) int {
 // Returns the new offset 'n', as well as the 32-bit float, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit float.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the 32-bit float.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalFloat32(n int, b []byte) (int, float32, error) {
 	if len(b)-n < 4 {
-		return n, 0, benc.ErrBufTooSmall
+		return n, 0, ErrBufTooSmall
 	}
 	u := b[n : n+4]
 	_ = u[3]
@@ -1032,12 +1039,12 @@ func UnmarshalFloat32(n int, b []byte) (int, float32, error) {
 // Returns the new offset 'n' after skipping the marshalled bool.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to skip the marshalled bool.
+//   - ErrBufTooSmall       - 'b' was too small to skip the marshalled bool.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func SkipBool(n int, b []byte) (int, error) {
 	if len(b)-n < 1 {
-		return 0, benc.ErrBufTooSmall
+		return 0, ErrBufTooSmall
 	}
 	return n + 1, nil
 }
@@ -1060,12 +1067,12 @@ func MarshalBool(n int, b []byte, v bool) int {
 // Returns the new offset 'n', as well as the bool, that got unmarshalled.
 //
 // Possible errors returned:
-//   - benc.ErrBufTooSmall       - 'b' was too small to unmarshal the bool.
+//   - ErrBufTooSmall       - 'b' was too small to unmarshal the bool.
 //
 // If a error is returned, n (the int returned) equals zero ( 0 ).
 func UnmarshalBool(n int, b []byte) (int, bool, error) {
 	if len(b)-n < 1 {
-		return 0, false, benc.ErrBufTooSmall
+		return 0, false, ErrBufTooSmall
 	}
 	return n + 1, uint8(b[n]) == 1, nil
 }

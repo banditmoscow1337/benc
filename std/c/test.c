@@ -14,7 +14,7 @@
 
 // Define the implementation in this file
 #define BSTD_IMPLEMENTATION
-#include "utils.h" // Assumed to contain generators and TestStruct definition
+#include "gen.h" // Assumed to contain generators and TestStruct definition
 
 //-///////////////////////////////////////////////////////////////////////////
 // Unified Testing Framework

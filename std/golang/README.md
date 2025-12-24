@@ -4,7 +4,7 @@ The Benc standard provides a suite of methods for raw sizing, skipping, marshall
 
 ## Installation
 ```bash
-go get github.com/deneonet/benc/std
+go get github.com/deneonet/benc/std/golang
 ```
 
 ## Tests

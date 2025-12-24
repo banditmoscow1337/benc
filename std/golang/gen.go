@@ -1,4 +1,4 @@
-package gen
+package bstd
 
 import (
 	"bytes"
