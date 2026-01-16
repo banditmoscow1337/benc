@@ -6,7 +6,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/banditmoscow1337/benc/cmd/internal/common"
+	"github.com/banditmoscow1337/benc/cmd/generator/common"
 )
 
 type generator struct {
@@ -14,20 +14,18 @@ type generator struct {
 	buf bytes.Buffer
 }
 
-func New(ctx *common.Context) common.Generator {
+func New(ctx *common.Context) *generator {
 	return &generator{Context: ctx}
 }
 
 func (g *generator) Generate() error {
 	// 1. Generate Header (.h)
 	g.generateHeader()
-	common.WriteFile(g.Context, g.buf.Bytes(), "h")
-	g.buf.Reset()
+	g.WriteFile(&g.buf, "_benc", ".h")
 
 	// 2. Generate Implementation (.c)
 	g.generateSource()
-	common.WriteFile(g.Context, g.buf.Bytes(), "c")
-	g.buf.Reset()
+	g.WriteFile(&g.buf, "_benc", "c")
 
 	return nil
 }
@@ -386,7 +384,7 @@ func isByte(t ast.Expr) bool {
 	return false
 }
 
-func (g *generator) Tests() {
+func (g *generator) Tests() error {
 	// 1. Generate Header Includes
 	g.generateTestHeader()
 
@@ -419,8 +417,7 @@ func (g *generator) Tests() {
 	g.generateTestMain()
 
 	// 6. Write to File
-	common.WriteFile(g.Context, g.buf.Bytes(), "test.c")
-	g.buf.Reset()
+	return g.WriteFile(&g.buf, "_benc_test", ".c")
 }
 
 // --- Test Generation Helpers ---

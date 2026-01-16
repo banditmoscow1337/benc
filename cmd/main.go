@@ -2,17 +2,15 @@ package main
 
 import (
 	"flag"
-	"go/ast"
 	"log"
-	"path/filepath"
 	"strings"
 
-	"github.com/banditmoscow1337/benc/cmd/internal/c"
-	"github.com/banditmoscow1337/benc/cmd/internal/cpp"
-	"github.com/banditmoscow1337/benc/cmd/internal/golang"
-	"github.com/banditmoscow1337/benc/cmd/internal/javascript"
+	"github.com/banditmoscow1337/benc/cmd/generator/c"
+	"github.com/banditmoscow1337/benc/cmd/generator/cpp"
+	"github.com/banditmoscow1337/benc/cmd/generator/golang"
+	"github.com/banditmoscow1337/benc/cmd/generator/javascript"
 
-	"github.com/banditmoscow1337/benc/cmd/internal/common"
+	"github.com/banditmoscow1337/benc/cmd/generator/common"
 )
 
 func main() {
@@ -24,29 +22,20 @@ func main() {
 		log.Fatal("Usage: go run main.go -lang=go,js,c,cpp <input_file>")
 	}
 
-	inputFile := args[0]
-	outputDir := filepath.Dir(inputFile)
-	baseName := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
-
-	var types []*ast.TypeSpec
-	var pkgName string
+	ctx := common.NewContext(args[0])
 
 	// Detect Input Type
-	if strings.HasSuffix(inputFile, ".js") {
-		javascript.Parse(inputFile, &pkgName, &types)
-		pkgName = strings.ToLower(baseName)
-	} else if strings.HasSuffix(inputFile, ".c") || strings.HasSuffix(inputFile, ".h") {
-		c.Parse(inputFile, &pkgName, &types)
+	if strings.HasSuffix(ctx.InputFile, ".js") {
+		javascript.Parse(ctx)
+	} else if strings.HasSuffix(ctx.InputFile, ".c") || strings.HasSuffix(ctx.InputFile, ".h") {
+		c.Parse(ctx)
 	} else {
-		golang.Parse(inputFile,&pkgName,&types)
+		golang.Parse(ctx)
 	}
 
-	if len(types) == 0 {
-		log.Printf("no structs or classes found in %s", inputFile)
+	if !ctx.Type2TypeSpecs() {
 		return
 	}
-
-	ctx := common.NewContext(pkgName, baseName, outputDir, types)
 
 	var generator common.Generator
 	
@@ -67,6 +56,8 @@ func main() {
 			log.Fatalf("%s generation failed: %v", lang, err)
 		}
 
-		generator.Tests()
+		if err :=generator.Tests(); err != nil {
+			log.Fatalf("%s generation test failed: %v", lang, err)
+		}
 	}
 }

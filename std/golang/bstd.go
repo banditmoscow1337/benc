@@ -249,6 +249,65 @@ func UnmarshalSlice[T any](n int, b []byte, unmarshaler interface{}) (int, []T, 
 	return n + 4, ts, nil
 }
 
+// Returns the bytes needed to marshal a fixed size array (passed as a slice).
+func SizeArray[T any](s []T, sizer SizeFunc[T]) (sz int) {
+	for _, t := range s {
+		sz += sizer(t)
+	}
+	return
+}
+
+// Returns the new offset 'n' after marshalling the fixed size array (passed as a slice).
+func MarshalArray[T any](n int, b []byte, s []T, marshaler MarshalFunc[T]) int {
+	for _, t := range s {
+		n = marshaler(n, b, t)
+	}
+	return n
+}
+
+// Unmarshals a fixed size array into the provided slice 's'.
+func UnmarshalArray[T any](n int, b []byte, s []T, unmarshaler interface{}) (int, error) {
+	var err error
+	switch p := unmarshaler.(type) {
+	case func(n int, b []byte) (int, T, error):
+		for i := range s {
+			n, s[i], err = p(n, b)
+			if err != nil {
+				return 0, err
+			}
+		}
+	case func(n int, b []byte, v *T) (int, error):
+		for i := range s {
+			n, err = p(n, b, &s[i])
+			if err != nil {
+				return 0, err
+			}
+		}
+	default:
+		panic("benc: invalid `unmarshaler` provided in `UnmarshalArray`")
+	}
+	return n, nil
+}
+
+// Returns the bytes needed to marshal a fixed size byte array.
+func SizeByteArray(n int) int {
+	return n
+}
+
+// Returns the new offset 'n' after marshalling the fixed size byte array.
+func MarshalByteArray(n int, b []byte, src []byte) int {
+	return n + copy(b[n:], src)
+}
+
+// Unmarshals a fixed size byte array into the provided slice 'dst'.
+func UnmarshalByteArray(n int, b []byte, dst []byte) (int, error) {
+	if len(b)-n < len(dst) {
+		return n, ErrBufTooSmall
+	}
+	copy(dst, b[n:])
+	return n + len(dst), nil
+}
+
 // Returns the new offset 'n' after skipping the marshalled map.
 //
 // Possible errors returned:
@@ -578,6 +637,11 @@ func UnmarshalInt(n int, buf []byte) (int, int, error) {
 	return 0, 0, ErrBufTooSmall
 }
 
+// Returns the new offset 'n' after skipping the marshalled unsigned integer.
+func SkipUint(n int, b []byte) (int, error) {
+	return SkipVarint(n, b)
+}
+
 // Returns the bytes needed to marshal a unsigned integer.
 func SizeUint(v uint) int {
 	i := 0
@@ -626,6 +690,27 @@ func UnmarshalUint(n int, buf []byte) (int, uint, error) {
 		s += 7
 	}
 	return 0, 0, ErrBufTooSmall
+}
+
+// Returns the new offset 'n' after skipping the marshalled uintptr.
+func SkipUintptr(n int, b []byte) (int, error) {
+	return SkipUint(n, b)
+}
+
+// Returns the bytes needed to marshal a uintptr.
+func SizeUintptr(v uintptr) int {
+	return SizeUint(uint(v))
+}
+
+// Returns the new offset 'n' after marshalling the uintptr.
+func MarshalUintptr(n int, b []byte, v uintptr) int {
+	return MarshalUint(n, b, uint(v))
+}
+
+// Returns the new offset 'n', as well as the uintptr, that got unmarshalled.
+func UnmarshalUintptr(n int, b []byte) (int, uintptr, error) {
+	n, v, err := UnmarshalUint(n, b)
+	return n, uintptr(v), err
 }
 
 // Returns the new offset 'n' after skipping the marshalled 64-bit unsigned integer.

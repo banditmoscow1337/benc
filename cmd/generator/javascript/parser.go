@@ -8,15 +8,17 @@ import (
 	"os"
 	"strings"
 	"text/scanner"
+
+	"github.com/banditmoscow1337/benc/cmd/generator/common"
 )
 
 // Parse reads a JS file and extracts class definitions as Go AST TypeSpecs.
 // It relies on the constructor initializing fields to infer types.
 // It prioritizes trailing comments for type definition (e.g., // map[string]int).
-func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) (err error) {
-	log.Printf("Parsing JS input: %s", inputFile)
+func Parse(ctx *common.Context) (err error) {
+	log.Printf("Parsing JS input: %s", ctx.InputFile)
 
-	file, err := os.Open(inputFile)
+	file, err := os.Open(ctx.InputFile)
 	if err != nil {
 		return
 	}
@@ -34,9 +36,11 @@ func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) (err error
 			if err != nil {
 				return
 			}
-			*types = append(*types, ts)
+			ctx.Types = append(ctx.Types, ts)
 		}
 	}
+
+	ctx.PkgName = strings.ToLower(ctx.BaseName)
 
 	return
 }

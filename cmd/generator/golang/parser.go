@@ -5,19 +5,21 @@ import (
 	"go/parser"
 	"go/token"
 	"log"
+
+	"github.com/banditmoscow1337/benc/cmd/generator/common"
 )
 
-func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) {
-	log.Printf("Parsing GO input: %s", inputFile)
+func Parse(ctx *common.Context) {
+	log.Printf("Parsing GO input: %s", ctx.InputFile)
 
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, inputFile, nil, parser.ParseComments)
+	node, err := parser.ParseFile(fset, ctx.InputFile, nil, parser.ParseComments)
 	if err != nil {
-		log.Fatalf("failed to parse input file %s: %v", inputFile, err)
+		log.Fatalf("failed to parse input file %s: %v", ctx.InputFile, err)
 	}
 
-	*pkgName = node.Name.Name
-	*types = collectTypes(node)
+	ctx.PkgName = node.Name.Name
+	ctx.Types = collectTypes(node)
 }
 
 func collectTypes(node *ast.File) []*ast.TypeSpec {

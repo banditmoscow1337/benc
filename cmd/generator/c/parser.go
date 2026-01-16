@@ -7,16 +7,18 @@ import (
 	"os"
 	"strings"
 	"text/scanner"
+
+	"github.com/banditmoscow1337/benc/cmd/generator/common"
 )
 
 // Parse reads a C header file and extracts structs as Go AST TypeSpecs.
 // It applies heuristics to detect slices (pointer + _count) and maps (_keys + _values + _count).
-func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) {
-	log.Printf("Parsing C17 input: %s", inputFile)
+func Parse(ctx *common.Context) {
+	log.Printf("Parsing C17 input: %s", ctx.InputFile)
 
-	file, err := os.Open(inputFile)
+	file, err := os.Open(ctx.InputFile)
 	if err != nil {
-		log.Fatalf("failed to open file %s: %v", inputFile, err)
+		log.Fatalf("failed to open file %s: %v", ctx.InputFile, err)
 	}
 	defer file.Close()
 
@@ -26,7 +28,7 @@ func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) {
 
 	// Simple heuristic: Use the filename as the package/prefix name
 	// In C, we don't strictly have packages, but we need one for the context.
-	*pkgName = "c_out"
+	ctx.PkgName = "c_out"
 
 	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
 		if s.TokenText() == "typedef" {
@@ -36,7 +38,7 @@ func Parse(inputFile string, pkgName *string, types *[]*ast.TypeSpec) {
 					log.Printf("Skipping struct due to error: %v", err)
 					continue
 				}
-				*types = append(*types, ts)
+				ctx.Types = append(ctx.Types, ts)
 			}
 		}
 	}

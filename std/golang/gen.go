@@ -248,3 +248,31 @@ func ComparePointer[T any](a, b *T, elemCmp func(T, T) error) error {
 	}
 	return elemCmp(*a, *b)
 }
+
+// ComparePointerKeyMap handles maps where the key is a pointer. 
+// Standard lookup fails because unmarshalling allocates new addresses.
+func ComparePointerKeyMap[K comparable, V any](a, b map[*K]V, valCmp func(V, V) error) error {
+	if len(a) != len(b) {
+		return fmt.Errorf("length mismatch: %d != %d", len(a), len(b))
+	}
+	
+	// We must iterate because we cannot look up by pointer address
+	for k1, v1 := range a {
+		found := false
+		for k2, v2 := range b {
+			// Check if keys point to the same value (assuming Comparable Primitives for now)
+			// Note: If K is complex, you need a keyCmp function passed in here too.
+			if (k1 == nil && k2 == nil) || (k1 != nil && k2 != nil && *k1 == *k2) {
+				if err := valCmp(v1, v2); err != nil {
+					return fmt.Errorf("key %v value mismatch: %w", k1, err)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("key %v (val: %v) missing in b (addresses changed during unmarshal)", k1, *k1)
+		}
+	}
+	return nil
+}
