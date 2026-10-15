@@ -1,7 +1,7 @@
 [package]
 name = "benc"
 version = "2.0.0"
-edition = "2026"
+edition = "2024"
 description = "Benc wire v1 Rust runtime"
 license = "MIT"
 repository = "https://github.com/banditmoscow1337/benc"
