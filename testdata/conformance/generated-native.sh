@@ -46,7 +46,7 @@ case "$language" in
 [package]
 name = "benc-generated-smoke"
 version = "0.1.0"
-edition = "202"
+edition = "2024"
 [dependencies]
 benc = { path = "$repo/std/rust" }
 chrono = "0.4.42"
